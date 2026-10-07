@@ -68,6 +68,16 @@
         "value": 5,
         "units": "%"
         }
+      },
+      {
+      "timestamp": "2026-10-07T06:42:37",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 10,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -131,6 +141,40 @@ after the moth *Lithosia quadra*.
   session's project is derived from the `cwd` field in its log header.
 - There is no `package.json`, no dependencies and no test framework. The
   migration tool deliberately uses only the Node standard library.
+
+### Credential scrubbing
+
+DSH removes credential-shaped variables from the environment of every process it
+spawns, so a secret present in the container does **not** reach agent shell
+commands. `@deepseek-ai/dsh-subprocess` applies:
+
+```js
+const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i;
+```
+
+together with every `DSH_*` name; `PATH`, `HOME`, locale and proxy variables
+survive. So `GITHUB_TOKEN`, `DEEPSEEK_API_KEY` and `DB_PASSWORD` are stripped —
+and so are `MONKEY` and `KEYBOARD`, because the pattern is an unanchored match —
+while `CALYCOPIS_CODE` and `PATH` pass through untouched.
+
+Practical consequences here:
+
+- A token exported into the container will not be visible to `bash` tool calls
+  under its usual name. Test with `bash -c 'echo ${VAR:+SET}'` inside a tool
+  call, **not** with `podman exec`, which takes a different path and will
+  mislead you.
+- If a secret genuinely has to reach an agent shell, give it a name that does not
+  match the pattern — `GITHUB_AUTH` and `GH_PAT` both survive, verified — and
+  record why in a comment where it is configured, because the name looks
+  arbitrary otherwise. Note that tools looking for `GITHUB_TOKEN` by name, such
+  as the `gh` CLI, will not find it, so call sites need
+  `GITHUB_TOKEN="$GITHUB_AUTH" gh …`.
+- The mounted podman socket bypasses the scrub entirely
+  (`podman exec <container> bash -c 'printf %s "$VAR"'`). That is why the scrub
+  must **not** be treated as isolation: while the socket is mounted, anything in
+  the container environment is reachable by an agent that goes looking.
+- The behaviour is deliberate, not a defect. The reasoning, evidence and the
+  options for working with it are recorded in GitHub issue **#5**.
 
 ## Working on the migration tool
 
