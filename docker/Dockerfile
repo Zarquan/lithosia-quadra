@@ -1,20 +1,35 @@
 #
-# Copyright (c) 2024, Manchester (http://www.manchester.ac.uk/)
-# All rights reserved.
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+# AIMetrics: [
+#     {
+#     "timestamp": "2026-10-07T08:08:35",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 5,
+#       "units": "%"
+#       }
+#     }
+#   ]
 #
 # Extension of the developer tools to add the DeepSeek agent harness.
 # https://deepseek-code.com/
@@ -81,11 +96,15 @@ RUN npm install -g \
    '@deepseek-ai/dsh'
 
 #
-# Use DSH to install the http proxy plugin.
-# This step needs to be done again at runtime to update the installation
-# because some of the configutation is saved in the user's `.dsh` directory.
-RUN dsh plugin \
-    --profile 'web' \
-    add 'github:smanx/dsh-proxy#master'
+# Add our initialisation script.
+COPY bin /usr/local/bin/
+RUN chmod a+x /usr/local/bin/*.sh
 
+#
+# Run our initialisation script.
+# This will need to be run again when the container starts.
+# Part of the initialisation process writes to the DSH_HOME
+# directory, which is mounted as a volume during the build
+# and again at runtime.
+RUN /usr/local/bin/init-dsh.sh
 
