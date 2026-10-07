@@ -78,6 +78,16 @@
         "value": 10,
         "units": "%"
         }
+      },
+      {
+      "timestamp": "2026-10-07T07:02:01",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 10,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -104,9 +114,9 @@ after the moth *Lithosia quadra*.
 | `agents/rules/` | yes | coding rules imported from Calycopis-broker |
 | `agents/git-identity.env` | yes | the identity used as the author of agent commits |
 | `agents/hooks/` | yes | versioned git hooks, currently the DCO guard |
-| `bin/` | yes | agent tooling: `agent-commit`, `setup-agent-git` |
+| `bin/` | yes | agent tooling: `agent-commit`, `setup-agent-git`, `gh` |
 | `notes/` | yes | dated operational notes |
-| `docker/Dockerfile` | untracked | container image that installs DSH and the web proxy plugin |
+| `docker/Dockerfile` | yes | container image: DSH, the web proxy plugin, `gh` |
 | `attic/sessions/` | **no** (`.gitignore`) | pre-transfer session directories, **not referenced by any tool** |
 
 ## Non-negotiable safety rules
@@ -163,18 +173,41 @@ Practical consequences here:
   under its usual name. Test with `bash -c 'echo ${VAR:+SET}'` inside a tool
   call, **not** with `podman exec`, which takes a different path and will
   mislead you.
-- If a secret genuinely has to reach an agent shell, give it a name that does not
-  match the pattern — `GITHUB_AUTH` and `GH_PAT` both survive, verified — and
-  record why in a comment where it is configured, because the name looks
-  arbitrary otherwise. Note that tools looking for `GITHUB_TOKEN` by name, such
-  as the `gh` CLI, will not find it, so call sites need
-  `GITHUB_TOKEN="$GITHUB_AUTH" gh …`.
+- **A secret that has to reach a shell is mounted, not injected.** A podman
+  secret defaults to `type=mount`, which writes a file at `/run/secrets/<name>`;
+  the scrub removes environment variables, so a file is untouched:
+
+  ```
+  --secret dsh-github-token        # -> /run/secrets/dsh-github-token
+  ```
+
+  [`bin/gh`](bin/gh) reads that file, so `bin/gh issue list …` works with no
+  environment variable at all. Anything else can do the same with
+  `$(cat /run/secrets/dsh-github-token)`: assigning it inline works because the
+  scrub has already run by the time the command line is evaluated.
+- Renaming a variable to dodge the pattern — `GITHUB_AUTH` and `GH_PAT` both
+  survive, verified — also works, but it deliberately exempts one secret from
+  the control, the name looks arbitrary wherever it is configured, and a future
+  tightening of the pattern would break it again. Prefer the mount.
 - The mounted podman socket bypasses the scrub entirely
   (`podman exec <container> bash -c 'printf %s "$VAR"'`). That is why the scrub
   must **not** be treated as isolation: while the socket is mounted, anything in
-  the container environment is reachable by an agent that goes looking.
+  the container environment is reachable by an agent that goes looking. A
+  mounted secret file is equivalent in exposure, but does not need the socket.
 - The behaviour is deliberate, not a defect. The reasoning, evidence and the
   options for working with it are recorded in GitHub issue **#5**.
+
+### Writing outside the workspace
+
+The file sandbox runs at `workspace-write`: the session workspace is writable, as
+are some platform temporary areas, but `/usr`, `/var`, `/etc` and the like are
+not. A package install therefore fails, and it fails misleadingly — `dnf` reports
+*"The requested operation requires superuser privileges"* even when running as
+root, because it is seeing `EACCES` from the sandbox and not a privilege problem.
+
+Installing software needs the command run with a wider sandbox mode, which asks
+for approval. Do not route around a denial by another path — policy refuses that
+— ask for the wider mode instead, and for one command only.
 
 ## Working on the migration tool
 

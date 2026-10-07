@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+# AIMetrics: [
+#     {
+#     "timestamp": "2026-10-07T07:01:13",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 100,
+#       "units": "%"
+#       }
+#     }
+#   ]
+#
+
+# Run the GitHub CLI with a token read from a mounted secret file.
+#
+#   bin/gh issue list --repo Zarquan/lithosia-quadra
+#
+# DSH removes credential-shaped variables from the environment of every process
+# it spawns (`/KEY|PASSWORD|SECRET|TOKEN/i`), so a token provided to the
+# container as an environment variable never reaches an agent shell. The token
+# is mounted as a file instead - a podman secret defaults to `type=mount`, which
+# writes one at /run/secrets/<name> - and is assigned here, inside the shell,
+# after the scrub has already run.
+#
+# Override the location with GH_SECRET_FILE, or set GH_TOKEN yourself and it is
+# passed through untouched. See AGENTS.md, "Credential scrubbing".
+
+set -euo pipefail
+
+secret=${GH_SECRET_FILE:-/run/secrets/dsh-github-token}
+
+if ! command -v gh >/dev/null 2>&1; then
+    echo "gh: the GitHub CLI is not installed in this container" >&2
+    exit 2
+fi
+
+# An explicit token wins, so this wrapper composes with a caller's own setup.
+if [ -n "${GH_TOKEN:-}" ]; then
+    exec gh "$@"
+fi
+
+if [ ! -r "$secret" ]; then
+    echo "gh: no token to use; '${secret}' is missing or unreadable" >&2
+    echo "gh: mount a secret there, set GH_SECRET_FILE, or set GH_TOKEN" >&2
+    exit 2
+fi
+
+exec env GH_TOKEN="$(cat "$secret")" gh "$@"
