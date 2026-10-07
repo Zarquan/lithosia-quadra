@@ -10,6 +10,11 @@ Every file you create or modify must have an AIMetrics block in its file header 
 - For new files created entirely by the agent, set contribution value to 100.
 - For modified files, estimate the percentage of lines changed and use that as the contribution value.
 
+**Exempt files** carry no AIMetrics block, because they carry no header at all
+(see the `licence-header` rule for the full list): dotfiles such as
+`.gitignore`; lockfiles and machine-generated files; and the imported
+`agents/rules/*.mdc` themselves.
+
 Each entry records one agent/model contribution to the file:
 
 - `timestamp` — the date and time of the modification, ISO 8601 format (YYYY-MM-DDThh:mm:ss).
@@ -108,8 +113,8 @@ For files with no AIMetrics or AI contribution, the block should be:
 > **Imported from the Calycopis-broker project**
 > (`/Calycopis/Calycopis-broker/agents/rules/ai-metrics.mdc`) and adapted for this
 > project: the JavaScript and Markdown formats have been added, because this
-> project is mostly `.mjs` and `.md`. As upstream, `agents/rules/*.mdc` are
-> exempt.
+> project is mostly `.mjs` and `.md`, and the exemption above now also covers
+> dotfiles and machine-generated files rather than only `agents/rules/*.mdc`.
 
 ### Git commit messages
 
