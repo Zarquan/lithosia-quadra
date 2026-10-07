@@ -88,6 +88,16 @@
         "value": 10,
         "units": "%"
         }
+      },
+      {
+      "timestamp": "2026-10-07T08:13:29",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 2,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -280,7 +290,7 @@ agent commit message.
 |---|---|
 | [`licence-header.mdc`](agents/rules/licence-header.mdc) | Every new source file starts with the GPL `<meta:header>` block, using the comment syntax for its language and the Wizzard Solutions Ltd copyright line. |
 | [`copyright-year.mdc`](agents/rules/copyright-year.mdc) | When a file carrying a `<meta:licence>` block is modified, bump its `Copyright (C) YYYY` to the current year. |
-| [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc) | Every created or modified file header carries an `AIMetrics` block, appended to rather than replacing existing entries, and every agent commit message ends with one using `interval` in place of `timestamp`. A GitHub issue created by an agent ends with one too, using `timestamp`, in a fenced code block. |
+| [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc) | One `AIMetrics` entry per **change**, not per edit, appended to a file header rather than replacing existing entries: `timestamp` for a change made in one pass, or `interval` covering it when several edits were made in sequence. Every agent commit message ends with one using `interval`, and so does every GitHub issue an agent creates, in a fenced code block. |
 | [`unexpected-behaviour.mdc`](agents/rules/unexpected-behaviour.mdc) | Stop and ask before coding around unexpected behaviour from an API, service or component — including DSH's own on-disk behaviour. |
 
 The `name`, `version` and `model` values must describe the agent that actually

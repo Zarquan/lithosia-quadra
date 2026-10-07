@@ -15,9 +15,18 @@ Every file you create or modify must have an AIMetrics block in its file header 
 `.gitignore`; lockfiles and machine-generated files; and the imported
 `agents/rules/*.mdc` themselves.
 
-Each entry records one agent/model contribution to the file:
+Each entry records one agent/model contribution to the file. Log one entry per
+**change**, not one per edit: a change made through several edits in sequence is
+a single contribution.
 
-- `timestamp` — the date and time of the modification, ISO 8601 format (YYYY-MM-DDThh:mm:ss).
+- `timestamp` — for a change made in one pass: the date and time of the
+  modification, ISO 8601 format (YYYY-MM-DDThh:mm:ss).
+- `interval` — for a change made through several edits in sequence: an ISO 8601
+  interval covering them, from the first edit to the last (e.g.
+  `2026-02-14T15:30:00/2026-02-14T15:52:00`). Use this instead of `timestamp`
+  rather than adding an entry per edit, which turns a record of who contributed
+  what into a log of keystrokes. Commit messages always use `interval`, because
+  a commit summarises a session's work.
 - `name` — the name of the agent or tool that made the modification. This must identify the
   agent running the current session (e.g. the harness package name, such as `@deepseek-ai/dsh`).
   Do NOT copy the values from the examples below; they are illustrative only.
@@ -31,6 +40,9 @@ The `name`, `version`, and `model` fields must always describe the agent and mod
 actually performed the modification. In this project that is normally `@deepseek-ai/dsh`,
 the version reported by `dsh --version`, and the `model` from the `agent-default-model`
 entry of the active profile (see `$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
+
+In every format below, substitute `interval` for `timestamp` when the change
+spanned several edits in sequence.
 
 The format for JavaScript and Node files (`.mjs`, `.js`, `.cjs`), in `//` comments, is:
 
@@ -115,6 +127,9 @@ For files with no AIMetrics or AI contribution, the block should be:
 > project: the JavaScript and Markdown formats have been added, because this
 > project is mostly `.mjs` and `.md`, and the exemption above now also covers
 > dotfiles and machine-generated files rather than only `agents/rules/*.mdc`.
+> Contributions here are logged one entry per **change** rather than one per
+> edit, using an `interval` when a change took several edits in sequence, and
+> issue bodies follow the same rule.
 
 ### Git commit messages
 
@@ -154,10 +169,11 @@ the block records which agent and model produced it.
 - The `name`, `version`, and `model` fields are the same as the values used for
   a file header and a commit message: they must always describe the agent and
   model that actually performed the work.
-- Use `timestamp`, as in a file header, rather than the `interval` a commit
-  message uses. A commit message summarises a session's work; an issue is
-  created at a point in time. If an agent later edits the issue body, append a
-  new entry rather than replacing existing ones, exactly as for a file header.
+- Use `timestamp` for a change made in one pass, or `interval` when the issue was
+  written or revised through several edits in sequence — one entry covering them,
+  exactly as for a file header. (A commit message always uses `interval`, because
+  a commit summarises a session's work.) Append a new entry for a later change
+  rather than replacing existing ones.
 - The `contribution.value` is `100` for an issue the agent created in full, and
   an estimate of the lines changed for one it later edited.
 - Surround the block with a fenced code block, because an issue body is Markdown
