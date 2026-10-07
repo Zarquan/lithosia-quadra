@@ -50,6 +50,8 @@
  *   node migrate-sessions-to-top-level.mjs --dry-run
  *   node migrate-sessions-to-top-level.mjs --apply --yes
  *   node migrate-sessions-to-top-level.mjs --restore <backup-dir> --yes
+ *   node migrate-sessions-to-top-level.mjs --dry-run --only session-<uuid>
+ *   node migrate-sessions-to-top-level.mjs --apply --yes --only <uuid> ...
  *
  * See MIGRATION-README.md for the full runbook.
  */
@@ -347,17 +349,38 @@ function listProjectDirs(sessionsRoot) {
 }
 
 /**
- * Build the migration plan: one entry per stored session whose header cwd is
- * not already the target.
+ * Session ids are stored as `session-<uuid>`; accept the bare uuid too, so a
+ * value taken from the GUI and one taken from a directory name both name the
+ * same session. The prefix is stripped from BOTH sides, keeping it symmetric.
+ *
+ * @param {string} value - a stored id or a user-supplied one.
+ * @returns {string} the id without its `session-` prefix.
  */
-function buildPlan({ sessionsRoot, target }) {
+function normalizeSessionId(value) {
+  return value.startsWith('session-') ? value.slice('session-'.length) : value;
+}
+
+/**
+ * Build the migration plan: one entry per stored session whose header cwd is
+ * not already the target. `only` (a list of session ids) narrows the plan to
+ * just those sessions. Every session it excludes is reported back as
+ * `unselected`, and an id that matches no stored session at all is surfaced as
+ * `unknown`, so a typo can never silently migrate nothing.
+ *
+ * @returns {{plan: object[], skipped: object[], unselected: object[], unknown: string[]}}
+ */
+function buildPlan({ sessionsRoot, target, only = [] }) {
+  const requested = only.length === 0 ? undefined : new Set(only.map(normalizeSessionId));
   const plan = [];
   const skipped = [];
+  const unselected = [];
+  const seen = new Set();
   for (const projectDir of listProjectDirs(sessionsRoot)) {
     for (const entry of readdirSync(projectDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const dir = join(projectDir, entry.name);
       const id = entry.name;
+      seen.add(normalizeSessionId(id));
       const generations = readdirSync(dir)
         .filter((name) => versionOf(name) !== undefined)
         .map((name) => ({ name, version: versionOf(name) }));
@@ -396,11 +419,19 @@ function buildPlan({ sessionsRoot, target }) {
       }
       entryPlan.newDirName = projectKey(target);
       entryPlan.newDir = join(sessionsRoot, entryPlan.newDirName, id);
+      if (requested !== undefined && !requested.has(normalizeSessionId(id))) {
+        unselected.push(entryPlan);
+        continue;
+      }
       plan.push(entryPlan);
     }
   }
-  plan.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-  return { plan, skipped };
+  const newestFirst = (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0);
+  plan.sort(newestFirst);
+  unselected.sort(newestFirst);
+  const unknown =
+    requested === undefined ? [] : only.filter((value) => !seen.has(normalizeSessionId(value)));
+  return { plan, skipped, unselected, unknown };
 }
 
 /* ------------------------------------------------------------------ *
@@ -723,6 +754,7 @@ function parseArgs(argv) {
     yes: false,
     keepProjects: false,
     forceRunning: false,
+    only: [],
     restore: undefined,
   };
   let sessionsRootGiven = false;
@@ -735,6 +767,7 @@ function parseArgs(argv) {
       case '--yes': case '-y': options.yes = true; break;
       case '--keep-projects': options.keepProjects = true; break;
       case '--force-running': options.forceRunning = true; break;
+      case '--only': options.only.push(flagValue(argv, ++i, arg)); break;
       case '--target': options.target = flagValue(argv, ++i, arg); break;
       case '--sessions-root':
         options.sessionsRoot = flagValue(argv, ++i, arg);
@@ -769,6 +802,7 @@ const USAGE = `Rebase DSH sessions onto a top-level workspace directory.
   node migrate-sessions-to-top-level.mjs --dry-run
   node migrate-sessions-to-top-level.mjs --apply --yes
   node migrate-sessions-to-top-level.mjs --restore <backup-dir> --yes
+  node migrate-sessions-to-top-level.mjs --dry-run --only session-<uuid>
 
 Options:
   --dry-run            Report the plan without writing anything (safe while DSH runs).
@@ -779,6 +813,9 @@ Options:
   --sessions-root <p>  Sessions root (default: $DSH_HOME/sessions).
   --dsh-home <path>    DSH home holding storages (default: $DSH_HOME, or ~/.dsh).
   --backup-root <p>    Where backups are written (default: $DSH_HOME/backups).
+  --only <session-id>  Migrate only the named session(s). Repeatable. Accepts
+                       'session-<uuid>' or the bare uuid. Every other session is
+                       left untouched and reported as "Not selected".
   --keep-projects      Leave emptied descendant workspaces registered instead of removing them.
   --force-running      Proceed even though a DSH host appears to be running (unsafe).
 
@@ -859,13 +896,29 @@ function main() {
   const workspaceJsonPath = join(options.dshHome, 'storages', 'workspace.json');
   if (!existsSync(workspaceJsonPath)) throw new Error(`workspace registry not found: ${workspaceJsonPath}`);
 
-  const { plan, skipped } = buildPlan({
+  const { plan, skipped, unselected, unknown } = buildPlan({
     sessionsRoot: options.sessionsRoot,
     target: options.target,
+    only: options.only,
   });
+
+  // A named session that matches nothing is a typo, not an empty migration:
+  // fail before touching anything, backup included.
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `--only names ${unknown.length} session(s) not found under ${options.sessionsRoot}:\n` +
+        `${unknown.map((id) => `  ${id}\n`).join('')}` +
+        'Check the id, or run without --only to see every session.\n',
+    );
+    process.exitCode = 2;
+    return;
+  }
 
   process.stdout.write(`Target workspace : ${options.target}\n`);
   process.stdout.write(`Sessions root    : ${options.sessionsRoot}\n`);
+  if (options.only.length > 0) {
+    process.stdout.write(`Only             : ${options.only.join(', ')}\n`);
+  }
   process.stdout.write(`Sessions to move : ${plan.length}\n`);
   for (const entry of plan) {
     process.stdout.write(
@@ -879,6 +932,10 @@ function main() {
       );
     }
   }
+  if (unselected.length > 0) {
+    process.stdout.write(`Not selected     : ${unselected.length} (excluded by --only)\n`);
+    for (const entry of unselected) process.stdout.write(`  ${entry.id}\n`);
+  }
   if (skipped.length > 0) {
     process.stdout.write(`Skipped          : ${skipped.length}\n`);
     for (const entry of skipped) process.stdout.write(`  ${entry.id}: ${entry.reason}\n`);
@@ -890,7 +947,11 @@ function main() {
   }
 
   if (plan.length === 0) {
-    process.stdout.write('Nothing to do: every session already targets the workspace.\n');
+    process.stdout.write(
+      options.only.length > 0
+        ? 'Nothing to do: none of the sessions named by --only still need migrating (see Skipped above).\n'
+        : 'Nothing to do: every session already targets the workspace.\n',
+    );
     return;
   }
 

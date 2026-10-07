@@ -87,8 +87,31 @@ under `Calycopis` (newest first).
 | `--restore <backup-dir>` | Undo a run from its backup. |
 | `--target <path>` | Target workspace (default `/Calycopis`). |
 | `--sessions-root`, `--dsh-home`, `--backup-root` | Override the `$DSH_HOME`-derived locations above. |
+| `--only <session-id>` | Migrate only the named session(s). Repeatable; accepts `session-<uuid>` or the bare uuid. See below. |
 | `--keep-projects` | Leave emptied sub-directory workspaces registered instead of removing them. |
 | `--force-running` | Proceed despite a detected DSH host (unsafe). |
+
+### Migrating a single session
+
+By default every session whose header `cwd` is not the target is migrated. To
+move one session and leave the rest alone, name it with `--only` (repeatable):
+
+```bash
+# preview just this session
+node tools/migration/migrate-sessions-to-top-level.mjs --dry-run \
+    --only <uuid>
+
+# apply it
+node tools/migration/migrate-sessions-to-top-level.mjs --apply --yes \
+    --only <uuid>
+```
+
+Sessions that would otherwise have moved are listed as `Not selected` and are
+left untouched; sessions already on the target are still reported as skipped.
+An id that matches no stored session aborts before the backup is taken, so a
+typo cannot quietly do nothing. The filter is idempotent too — naming a session
+that already sits on the target reports "nothing to do" rather than rewriting
+it.
 
 ## Rollback
 
