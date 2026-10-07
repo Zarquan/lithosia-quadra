@@ -28,6 +28,16 @@
 #       "value": 5,
 #       "units": "%"
 #       }
+#     },
+#     {
+#     "timestamp": "2026-10-07T11:17:10",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 1,
+#       "units": "%"
+#       }
 #     }
 #   ]
 #
@@ -102,9 +112,8 @@ RUN chmod a+x /usr/local/bin/*.sh
 
 #
 # Run our initialisation script.
-# This will need to be run again when the container starts.
-# Part of the initialisation process writes to the DSH_HOME
-# directory, which is mounted as a volume during the build
-# and again at runtime.
+# This needs to be run again when the container starts: at build time DSH_HOME is unset,
+# so the plugin installs into DSH's default home rather than the mounted one
+# the harness reads. The script is idempotent, so running it twice is safe.
 RUN /usr/local/bin/init-dsh.sh
 
