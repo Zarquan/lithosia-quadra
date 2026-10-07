@@ -38,6 +38,16 @@
 #       "value": 1,
 #       "units": "%"
 #       }
+#     },
+#     {
+#     "timestamp": "2026-10-07T11:20:33",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 1,
+#       "units": "%"
+#       }
 #     }
 #   ]
 #
@@ -101,7 +111,7 @@ VOLUME /root/.dsh
 # Use the Node package manager to install DSH.
 # https://github.com/deepseek-ai/deepseek-harness
 # This step needs to be done again at runtime to update the installation
-# because a lot of the configutation is saved in the user's configuration volume.
+# because a lot of the configuration is saved in the user's configuration volume.
 RUN npm install -g \
    '@deepseek-ai/dsh'
 
