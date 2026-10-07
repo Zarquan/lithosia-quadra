@@ -89,6 +89,7 @@ under `Calycopis` (newest first).
 | `--sessions-root`, `--dsh-home`, `--backup-root` | Override the `$DSH_HOME`-derived locations above. |
 | `--only <session-id>` | Migrate only the named session(s). Repeatable; accepts `session-<uuid>` or the bare uuid. See below. |
 | `--keep-projects` | Leave emptied sub-directory workspaces registered instead of removing them. |
+| `--allow-skipped` | Migrate even when a stored session cannot be read; it is left behind. |
 | `--force-running` | Proceed despite a detected DSH host (unsafe). |
 
 ### Migrating a single session
@@ -112,6 +113,16 @@ An id that matches no stored session aborts before the backup is taken, so a
 typo cannot quietly do nothing. The filter is idempotent too — naming a session
 that already sits on the target reports "nothing to do" rather than rewriting
 it.
+
+### Unreadable sessions
+
+A session that cannot be read — a corrupt or unreadable header, a header with no
+`cwd`, or a session directory with no generation file — would be left behind, so
+the script refuses rather than migrating a partial history. The refusal names
+them and offers two ways forward: `--only` to migrate one specific session
+anyway, or `--allow-skipped` to migrate everything else and leave the unreadable
+ones alone. `--dry-run` reports the same refusal and exits non-zero too, so a
+preview predicts what an apply would do.
 
 ## Rollback
 

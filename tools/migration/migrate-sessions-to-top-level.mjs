@@ -394,7 +394,7 @@ function buildPlan({ sessionsRoot, target, only = [] }) {
         .filter((name) => versionOf(name) !== undefined)
         .map((name) => ({ name, version: versionOf(name) }));
       if (generations.length === 0) {
-        skipped.push({ id, dir, reason: 'no session generation file' });
+        skipped.push({ id, dir, reason: 'no session generation file', blocking: true });
         continue;
       }
       generations.sort((a, b) => b.version - a.version);
@@ -403,11 +403,11 @@ function buildPlan({ sessionsRoot, target, only = [] }) {
       try {
         header = readHeader(primary);
       } catch (error) {
-        skipped.push({ id, dir, reason: `unreadable header: ${error.message}` });
+        skipped.push({ id, dir, reason: `unreadable header: ${error.message}`, blocking: true });
         continue;
       }
       if (typeof header.cwd !== 'string') {
-        skipped.push({ id, dir, reason: 'header carries no cwd' });
+        skipped.push({ id, dir, reason: 'header carries no cwd', blocking: true });
         continue;
       }
       const expectedDirName = projectKey(header.cwd);
@@ -423,7 +423,8 @@ function buildPlan({ sessionsRoot, target, only = [] }) {
         layoutMatches,
       };
       if (header.cwd === target) {
-        skipped.push({ ...entryPlan, reason: 'already on target workspace' });
+        // Benign: the session is already where it belongs, so it never blocks.
+        skipped.push({ ...entryPlan, reason: 'already on target workspace', blocking: false });
         continue;
       }
       entryPlan.newDirName = projectKey(target);
@@ -805,6 +806,7 @@ function parseArgs(argv) {
     yes: false,
     keepProjects: false,
     forceRunning: false,
+    allowSkipped: false,
     only: [],
     restore: undefined,
   };
@@ -818,6 +820,7 @@ function parseArgs(argv) {
       case '--yes': case '-y': options.yes = true; break;
       case '--keep-projects': options.keepProjects = true; break;
       case '--force-running': options.forceRunning = true; break;
+      case '--allow-skipped': options.allowSkipped = true; break;
       case '--only': options.only.push(flagValue(argv, ++i, arg)); break;
       case '--target': options.target = flagValue(argv, ++i, arg); break;
       case '--sessions-root':
@@ -868,6 +871,8 @@ Options:
                        'session-<uuid>' or the bare uuid. Every other session is
                        left untouched and reported as "Not selected".
   --keep-projects      Leave emptied descendant workspaces registered instead of removing them.
+  --allow-skipped      Migrate even when a stored session cannot be read; such
+                       sessions are left behind.
   --force-running      Proceed even though a DSH host appears to be running (unsafe).
 
 The harness home is read from DSH_HOME (falling back to ~/.dsh, as DSH itself
@@ -999,6 +1004,30 @@ function main() {
   if (skipped.length > 0) {
     process.stdout.write(`Skipped          : ${skipped.length}\n`);
     for (const entry of skipped) process.stdout.write(`  ${entry.id}: ${entry.reason}\n`);
+  }
+
+  // A stored session that cannot be read would be left behind, so refuse by
+  // default: a partially migrated history is worse than none. `--only` narrows
+  // the check to the sessions actually requested, and `--allow-skipped` is the
+  // explicit escape hatch. Dry runs report the same refusal so a preview
+  // predicts what an apply would do.
+  const requestedIds = new Set(options.only.map(normalizeSessionId));
+  const blocking = skipped.filter(
+    (entry) =>
+      entry.blocking === true &&
+      (requestedIds.size === 0 || requestedIds.has(normalizeSessionId(entry.id))),
+  );
+  if (blocking.length > 0 && !options.allowSkipped) {
+    process.stderr.write(
+      `${
+        options.dryRun ? 'dry run: would refuse to migrate' : 'refusing to migrate'
+      }: ${blocking.length} stored session(s) cannot be read:\n` +
+        blocking.map((entry) => `  ${entry.id}: ${entry.reason}\n`).join('') +
+        'They would be left behind. Fix them, name the sessions you want with --only,\n' +
+        'or pass --allow-skipped to migrate the rest anyway.\n',
+    );
+    process.exitCode = 2;
+    return;
   }
 
   if (options.dryRun) {
