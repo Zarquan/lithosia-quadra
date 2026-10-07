@@ -73,10 +73,18 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
+import { constants, zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 
 const ZSTD_MAGIC = 0xfd2fb528;
 const NEWLINE = 0x0a;
+
+/**
+ * DSH stamps every frame it writes with a zstd content checksum
+ * (`CHECKSUM_OPTIONS` in `@deepseek-ai/dsh-session-persistence-jsonl`). Match
+ * it so a rebuilt header frame is the encoding DSH would have produced, not
+ * merely one it can read.
+ */
+const DSH_FRAME_OPTIONS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
 
 /* ------------------------------------------------------------------ *
  * zstd concatenated-frame container
@@ -249,7 +257,7 @@ function rewriteHeaderCwd(file, targetCwd) {
   if (plain) {
     out = Buffer.concat([line, bytes.subarray(headerEnd)]);
   } else {
-    const newFrame = zstdCompressSync(line);
+    const newFrame = zstdCompressSync(line, DSH_FRAME_OPTIONS);
     const tail = bytes.subarray(headerEnd);
     out = Buffer.concat([newFrame, tail]);
     // The rewritten frame 0 must be the only byte-range difference; any torn
