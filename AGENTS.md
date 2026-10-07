@@ -98,6 +98,16 @@
         "value": 2,
         "units": "%"
         }
+      },
+      {
+      "interval": "2026-10-07T08:56:04/2026-10-07T08:56:46",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 3,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -373,7 +383,18 @@ It is per clone, since it sets `core.hooksPath`, and `--no-verify` bypasses it.
 Caveats: `--amend` keeps the original author, so use `--reset-author` to
 re-attribute; `git merge` never calls the wrapper, so agent merges need the same
 `GIT_AUTHOR_*` variables or should be left to a human; `git rebase --signoff`
-signs off as the committer, which is correct.
+signs off as the committer, which is correct, and deduplicates, so a commit that
+already carries the same trailer does not gain a second one.
 
-The commits made before this arrangement remain unsigned, deliberately — there
-is no backfill.
+Note that neither `git merge` nor `git rebase` runs the `commit-msg` guard, even
+though both create commits. A rebase of the commits made before this arrangement
+ran with the guard enabled, from a DSH session, and was not refused — the guard
+sees `git commit` only. That makes a rebase a way past it, which is worth knowing
+before assuming the guard covers every commit in the history.
+
+The commits made before this arrangement were unsigned until 2026-10-07, when a
+`git rebase --signoff` signed them. That rewrote every commit after
+`origin/main` — not only the unsigned ones, because a change to an ancestor
+changes every descendant — so **every hash changed**. Notes and issues that cite
+those commits carry the hashes as they were after that rewrite; a hash quoted
+from an older copy names a commit that is no longer on the branch.

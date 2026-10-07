@@ -44,6 +44,16 @@
 #       "value": 15,
 #       "units": "%"
 #       }
+#     },
+#     {
+#     "interval": "2026-10-07T08:56:04/2026-10-07T08:56:46",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 3,
+#       "units": "%"
+#       }
 #     }
 #   ]
 #
@@ -84,9 +94,15 @@
 
     Commits:
 
-        a5c186c Imported the agent coding rules from Calycopis-broker
-        0d7e507 Added a header exemption for dotfiles and generated files
-        d39d6c8 Logged one AIMetrics entry per change, not per edit
+        6cc4b2e Imported the agent coding rules from Calycopis-broker
+        eba5e11 Added a header exemption for dotfiles and generated files
+        1500def Logged one AIMetrics entry per change, not per edit
+
+    These are the hashes as they stand after the DCO sign-off rebase of
+    2026-10-07, which rewrote every commit after origin/main and so
+    changed all of them. Hashes quoted in older copies of this note, or
+    in issue #3, name commits that no longer exist on the branch; that
+    issue records the mapping from old to new.
 
     To review the differences, file by file:
 
@@ -132,8 +148,8 @@
         "Credential scrubbing" and "Writing outside the workspace" record
         behaviour of the DeepSeek Harness and its file sandbox. They are
         useful here and meaningless upstream, which is a plain source
-        project with no harness and no sandbox. Added in 57b1daa and
-        f4b122b, the latter along with the bin/gh wrapper, whose default
+        project with no harness and no sandbox. Added in 810652d and
+        09d5bf8, the latter along with the bin/gh wrapper, whose default
         path is a podman secret location.
 
 # -----------------------------------------------------
@@ -176,7 +192,7 @@
         entries, which records keystrokes rather than contribution. The
         rule groups such a run into one entry using an ISO 8601 interval,
         from the first edit to the last, and issue bodies follow the same
-        rule rather than always using a timestamp. Applied here in d39d6c8;
+        rule rather than always using a timestamp. Applied here in 1500def;
         the text is in part 5 below.
 
 # -----------------------------------------------------
