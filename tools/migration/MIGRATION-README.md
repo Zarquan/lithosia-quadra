@@ -90,6 +90,7 @@ under `Calycopis` (newest first).
 | `--only <session-id>` | Migrate only the named session(s). Repeatable; accepts `session-<uuid>` or the bare uuid. See below. |
 | `--keep-projects` | Leave emptied sub-directory workspaces registered instead of removing them. |
 | `--allow-skipped` | Migrate even when a stored session cannot be read; it is left behind. |
+| `--allow-newer-format` | Migrate sessions whose log format is newer than the validated v4 header layout. |
 | `--force-running` | Proceed despite a detected DSH host (unsafe). |
 
 ### Migrating a single session
@@ -123,6 +124,25 @@ them and offers two ways forward: `--only` to migrate one specific session
 anyway, or `--allow-skipped` to migrate everything else and leave the unreadable
 ones alone. `--dry-run` reports the same refusal and exits non-zero too, so a
 preview predicts what an apply would do.
+
+### Format compatibility
+
+The script writes durable DSH state directly, so it pins the formats it
+understands and checks them before writing anything:
+
+| Artifact | Pinned format | On mismatch |
+|---|---|---|
+| `storages/workspace.json` | `workspace` v2 | **Aborts** before the backup. DSH opens it as a whole-unit document and rejects a version it does not expect, so writing the wrong shape would leave the harness unable to open its own registry. |
+| `storages/session_projcache.json`, `storages/session_projcache/sessions/*.json` | `session_projcache` v7, accepting the declared v3–v6 predecessors | **Reports and skips** that document. The cache is derived data that DSH rebuilds, and its own store discards records it cannot read. |
+| Session logs | header format v4 | Treated as an unreadable session and refused, unless `--allow-newer-format` is given. |
+
+Two behaviours DSH does not export are pinned by self-tests that run on every
+invocation: `projectKey`, against golden values captured from DSH's own
+implementation, and the zstd frame scanner, against a stream the script builds
+itself. If either drifts, the run fails immediately rather than filing sessions
+under the wrong project directory or corrupting a log. After a DSH upgrade,
+re-verify these pins against `@deepseek-ai/dsh-session-persistence-jsonl` and
+`@deepseek-ai/dsh-workspace` before migrating.
 
 ## Rollback
 
