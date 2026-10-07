@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+# AIMetrics: [
+#     {
+#     "timestamp": "2026-10-07T04:17:29",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 100,
+#       "units": "%"
+#       }
+#     }
+#   ]
+#
+
+# Point this clone at the repository's versioned hooks.
+#
+# core.hooksPath lives in .git/config, which is not versioned, so the DCO
+# guard has to be switched on once per clone. The wrapper bin/agent-commit
+# works without this; the hook only adds enforcement.
+#
+#   bin/setup-agent-git
+#
+# Re-running is harmless. The absolute path is written because a relative
+# core.hooksPath would be resolved against the wrong directory.
+
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+hooks="${root}/agents/hooks"
+
+if [ ! -d "$hooks" ]; then
+    echo "setup-agent-git: no hooks directory at ${hooks}" >&2
+    exit 2
+fi
+
+chmod +x "${hooks}/commit-msg"
+git config core.hooksPath "$hooks"
+
+echo "setup-agent-git: core.hooksPath -> $(git config core.hooksPath)"

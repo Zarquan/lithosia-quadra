@@ -1,0 +1,199 @@
+---
+description: Update AIMetrics block in file headers for all modified or created files
+alwaysApply: true
+---
+
+Every file you create or modify must have an AIMetrics block in its file header comment.
+
+- If a file already has an AIMetrics block, update it by adding a new entry to the array (do not remove existing entries).
+- If a file has no AIMetrics block, add one.
+- For new files created entirely by the agent, set contribution value to 100.
+- For modified files, estimate the percentage of lines changed and use that as the contribution value.
+
+**Exempt files** carry no AIMetrics block, because they carry no header at all
+(see the `licence-header` rule for the full list): dotfiles such as
+`.gitignore`; lockfiles and machine-generated files; and the imported
+`agents/rules/*.mdc` themselves.
+
+Each entry records one agent/model contribution to the file. Log one entry per
+**change**, not one per edit: a change made through several edits in sequence is
+a single contribution.
+
+- `timestamp` — for a change made in one pass: the date and time of the
+  modification, ISO 8601 format (YYYY-MM-DDThh:mm:ss).
+- `interval` — for a change made through several edits in sequence: an ISO 8601
+  interval covering them, from the first edit to the last (e.g.
+  `2026-02-14T15:30:00/2026-02-14T15:52:00`). Use this instead of `timestamp`
+  rather than adding an entry per edit, which turns a record of who contributed
+  what into a log of keystrokes. Commit messages always use `interval`, because
+  a commit summarises a session's work.
+- `name` — the name of the agent or tool that made the modification. This must identify the
+  agent running the current session (e.g. the harness package name, such as `@deepseek-ai/dsh`).
+  Do NOT copy the values from the examples below; they are illustrative only.
+- `version` — the version of that agent/tool, taken from the current session (e.g. `0.2.0-rc.2`).
+- `model` — the identifier of the model powering the agent in the current session
+  (e.g. `deepseek-flash`).
+- `contribution.value` — the percentage of the file's lines changed by this contribution
+  (100 for a new file).
+
+The `name`, `version`, and `model` fields must always describe the agent and model that
+actually performed the modification. In this project that is normally `@deepseek-ai/dsh`,
+the version reported by `dsh --version`, and the `model` from the `agent-default-model`
+entry of the active profile (see `$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
+
+In every format below, substitute `interval` for `timestamp` when the change
+spanned several edits in sequence.
+
+The format for JavaScript and Node files (`.mjs`, `.js`, `.cjs`), in `//` comments, is:
+
+```
+// AIMetrics: [
+//     {
+//     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+//     "name": "<agent/tool name from the current session>",
+//     "version": "<agent/tool version from the current session>",
+//     "model": "<model identifier from the current session>",
+//     "contribution": {
+//       "value": <percentage>,
+//       "units": "%"
+//       }
+//     }
+//   ]
+```
+
+The format for Python, YAML, shell, and other `#`-commented files is:
+
+```
+# AIMetrics: [
+#     {
+#     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+#     "name": "<agent/tool name from the current session>",
+#     "version": "<agent/tool version from the current session>",
+#     "model": "<model identifier from the current session>",
+#     "contribution": {
+#       "value": <percentage>,
+#       "units": "%"
+#       }
+#     }
+#   ]
+```
+
+The format for Java files (inside the `/* */` header comment) is:
+
+```
+ * AIMetrics: [
+ *     {
+ *     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+ *     "name": "<agent/tool name from the current session>",
+ *     "version": "<agent/tool version from the current session>",
+ *     "model": "<model identifier from the current session>",
+ *     "contribution": {
+ *       "value": <percentage>,
+ *       "units": "%"
+ *       }
+ *     }
+ *   ]
+```
+
+The format for Markdown files and XML files (inside `<!-- -->` comments) is:
+
+```
+  AIMetrics: [
+      {
+      "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+      "name": "<agent/tool name from the current session>",
+      "version": "<agent/tool version from the current session>",
+      "model": "<model identifier from the current session>",
+      "contribution": {
+        "value": <percentage>,
+        "units": "%"
+        }
+      }
+    ]
+```
+
+Place the block after the `</meta:header>` tag and before the closing comment delimiter.
+
+For files with no AIMetrics or AI contribution, the block should be:
+
+```
+ * AIMetrics: []
+```
+
+(using the appropriate comment prefix for the file type).
+
+> **Imported from the Calycopis-broker project**
+> (`/Calycopis/Calycopis-broker/agents/rules/ai-metrics.mdc`) and adapted for this
+> project: the JavaScript and Markdown formats have been added, because this
+> project is mostly `.mjs` and `.md`, and the exemption above now also covers
+> dotfiles and machine-generated files rather than only `agents/rules/*.mdc`.
+> Contributions here are logged one entry per **change** rather than one per
+> edit, using an `interval` when a change took several edits in sequence, and
+> issue bodies follow the same rule.
+
+### Git commit messages
+
+Every git commit message created by an agent must end with an AIMetrics block.
+
+- The `name`, `version`, and `model` fields are the same as the values used for a file header
+  (see above): they must always describe the agent and model that actually performed the work.
+- The `contribution.value` is an estimate of how much of the changes in the commit were
+  contributed by the agent. If all of the changes were contributed by the agent, set the value
+  to `100`.
+- A commit message block uses `interval` instead of `timestamp`: an ISO 8601 interval covering
+  the current session (e.g. `2026-02-14T15:30:00/2026-03-14T05:00:00`).
+
+The format for an AIMetrics block at the end of a commit message is:
+
+```
+AIMetrics: [
+    {
+    "interval": "<ISO 8601 interval covering the current session, e.g. 2026-02-14T15:30:00/2026-03-14T05:00:00>",
+    "name": "<agent/tool name from the current session>",
+    "version": "<agent/tool version from the current session>",
+    "model": "<model identifier from the current session>",
+    "contribution": {
+      "value": <percentage>,
+      "units": "%"
+      }
+    }
+  ]
+```
+
+### GitHub issues
+
+Every GitHub issue created by an agent must end with an AIMetrics block, for
+the same reason a commit message does: the issue is an authored artifact, and
+the block records which agent and model produced it.
+
+- The `name`, `version`, and `model` fields are the same as the values used for
+  a file header and a commit message: they must always describe the agent and
+  model that actually performed the work.
+- Use `timestamp` for a change made in one pass, or `interval` when the issue was
+  written or revised through several edits in sequence — one entry covering them,
+  exactly as for a file header. (A commit message always uses `interval`, because
+  a commit summarises a session's work.) Append a new entry for a later change
+  rather than replacing existing ones.
+- The `contribution.value` is `100` for an issue the agent created in full, and
+  an estimate of the lines changed for one it later edited.
+- Surround the block with a fenced code block, because an issue body is Markdown
+  and has no comment syntax to put it in. It must be the last thing in the body.
+
+The format for an AIMetrics block at the end of a GitHub issue body is:
+
+````text
+```text
+AIMetrics: [
+    {
+    "timestamp": "<ISO 8601 timestamp of the issue, e.g. 2026-02-14T15:30:00>",
+    "name": "<agent/tool name from the current session>",
+    "version": "<agent/tool version from the current session>",
+    "model": "<model identifier from the current session>",
+    "contribution": {
+      "value": <percentage>,
+      "units": "%"
+      }
+    }
+  ]
+```
+````

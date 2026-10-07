@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+# AIMetrics: [
+#     {
+#     "timestamp": "2026-10-07T04:17:29",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 100,
+#       "units": "%"
+#       }
+#     }
+#   ]
+#
+
+# Commit with the agent as AUTHOR and the repository user as COMMITTER, so the
+# human who approves the change certifies it through the DCO sign-off.
+#
+#   bin/agent-commit -m "Message"
+#   bin/agent-commit -F -            # message on stdin
+#
+# The author is fixed by this wrapper, so --author is rejected rather than
+# silently overridden. Every other argument is passed to `git commit`, and
+# --signoff is always applied: the sign-off names the committer, which is the
+# human, never the agent.
+#
+# Agent commits must only be made once the human has explicitly approved the
+# exact change set and the commit message. See AGENTS.md.
+
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+identity="${root}/agents/git-identity.env"
+
+# Environment variables win over the committed file, so a one-off identity can
+# be supplied without editing anything.
+name=${AGENT_GIT_NAME:-}
+email=${AGENT_GIT_EMAIL:-}
+if { [ -z "$name" ] || [ -z "$email" ]; } && [ -r "$identity" ]; then
+    # shellcheck source=/dev/null
+    . "$identity"
+    name=${AGENT_GIT_NAME:-}
+    email=${AGENT_GIT_EMAIL:-}
+fi
+
+if [ -z "$name" ] || [ -z "$email" ]; then
+    echo "agent-commit: no agent identity; set AGENT_GIT_NAME and AGENT_GIT_EMAIL in ${identity}" >&2
+    exit 2
+fi
+
+committer_name=$(git config user.name || true)
+committer_email=$(git config user.email || true)
+if [ -z "$committer_name" ] || [ -z "$committer_email" ]; then
+    echo "agent-commit: no user.name/user.email configured; nothing would sign off" >&2
+    exit 2
+fi
+
+for arg in "$@"; do
+    case "$arg" in
+        --author|--author=*)
+            echo "agent-commit: the author is fixed by this wrapper" >&2
+            exit 2
+            ;;
+    esac
+done
+
+echo "agent-commit: author ${name} <${email}>; committer ${committer_name} <${committer_email}>" >&2
+
+exec env \
+    GIT_AUTHOR_NAME="$name" \
+    GIT_AUTHOR_EMAIL="$email" \
+    git commit --signoff "$@"

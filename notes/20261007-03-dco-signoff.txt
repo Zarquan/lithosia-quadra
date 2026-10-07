@@ -1,0 +1,318 @@
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+#zrq-notes-time
+#zrq-notes-indent
+#zrq-notes-crypto
+#zrq-notes-ansible
+#zrq-notes-osformat
+#
+# AIMetrics: [
+#     {
+#     "timestamp": "2026-10-07T04:24:45",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 100,
+#       "units": "%"
+#       }
+#     },
+#     {
+#     "interval": "2026-10-07T08:56:04/2026-10-07T08:56:46",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 2,
+#       "units": "%"
+#       }
+#     }
+#   ]
+#
+
+    Target:
+
+        Record how AI agents commit and sign off with their own identity in
+        the lithosia-quadra project, so that the same arrangement can be
+        ported to Calycopis-broker and any other project later.
+
+    Result:
+
+        Work in progress ...
+
+# -----------------------------------------------------
+# What was built, and where.
+#[root@lithosia-dsh-pod]
+
+    Commit:
+
+        ce1f606 Added a distinct agent identity with human DCO sign-off
+
+        Rewritten from 9e72788 by the sign-off rebase of 2026-10-07, which
+        also signed off the twelve commits that predated this one and so
+        changed every hash on the branch.
+
+    Files, all in this repository and all portable:
+
+        agents/git-identity.env     the author identity (name and email)
+        bin/agent-commit            commits with the agent as author
+        agents/hooks/commit-msg     refuses a commit that bypassed the wrapper
+        bin/setup-agent-git         enables that guard per clone
+
+    Plus a "Commit identity and sign-off" section in AGENTS.md.
+
+    The result for every agent commit:
+
+        author    DeepSeek Harness <zrq-github+dsh@metagrid.co.uk>
+        committer Zarquan <zrq-github@metagrid.co.uk>
+        trailer   Signed-off-by: Zarquan <zrq-github@metagrid.co.uk>
+
+    So CONTRIBUTING.md's DCO requirement is satisfied: the agent is
+    credited as the author, and the person who approved the change - the
+    committer - provides the certification.
+
+# -----------------------------------------------------
+# Why it is built this way. These were checked, not assumed.
+#[root@lithosia-dsh-pod]
+
+    1. DSH cannot inject GIT_* variables.
+
+        The dsh-shell-env registry validates every contributed key with
+        key.startsWith("DSH_"), so only DSH_* names can be injected. There
+        is no git identity handling anywhere in the harness either.
+
+    2. A shell profile will not help.
+
+        The agent's bash tool runs non-interactive, non-login shells, and
+        BASH_ENV is unset, so ~/.bashrc is never sourced. Setting GIT_* in
+        a profile would not reach agent commands.
+
+    3. There is no global git config here.
+
+        /root/.gitconfig and /etc/gitconfig do not exist, so the identity
+        comes only from the repository's .git/config. Putting the agent
+        identity there would re-author the human's own commits too, which
+        is why the identity lives in a committed file instead.
+
+    4. Environment variables are used rather than --author.
+
+        GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL set the author, while the
+        committer stays the .git/config user, and `git commit --signoff`
+        signs off as the committer. Crucially, git passes the resolved
+        GIT_AUTHOR_*/GIT_COMMITTER_* to hooks, so a guard can verify the
+        author. A --author flag would not be visible to a hook.
+
+    5. DSH_SESSION_ID distinguishes the two shells.
+
+        It is injected into every agent shell invocation and is absent from
+        a human's own shell, so the guard can police agent commits without
+        ever touching a human's.
+
+    6. The trailer order works.
+
+        `--signoff` appends Signed-off-by after the AIMetrics block that
+        our rules require. `git interpret-trailers --parse` reads both
+        correctly as separate trailers.
+
+    7. Rejected - container level environment.
+
+        Setting GIT_AUTHOR_* on the DSH host would work, but it lives in
+        lithosia.env outside the repository, would apply to every project
+        the agent touches, and is not shareable by cloning.
+
+# -----------------------------------------------------
+# The policy that goes with the mechanism.
+#[root@lithosia-dsh-pod]
+
+    The agent is the AUTHOR. The human is the COMMITTER and the DCO
+    signatory.
+
+    Agents commit only after the human has explicitly approved the exact
+    change set and the commit message. That approval is the certification;
+    nothing enforces it technically. A general "looks good" is not approval
+    to commit, and an agent does not commit unprompted.
+
+    The only real technical gate would be cryptographic signing with a key
+    the agent cannot use. That was considered and not adopted.
+
+# -----------------------------------------------------
+# Porting to another project, step by step.
+#[root@lithosia-dsh-pod]
+
+    1. Copy the four files.
+
+           agents/git-identity.env
+           bin/agent-commit
+           agents/hooks/commit-msg
+           bin/setup-agent-git
+
+       Keep the exec bits (100755 on the three scripts). They are
+       self-contained: the scripts locate the repository root with
+       `git rev-parse --show-toplevel` and read the identity file relative
+       to it, so no paths need editing.
+
+    2. Change the identity.
+
+       In agents/git-identity.env set AGENT_GIT_NAME and AGENT_GIT_EMAIL
+       for that project. The scripts need no other change.
+
+       The values must suit the project. For Calycopis-broker, whose
+       commits are attributed to Manchester people, something like
+       "DeepSeek Harness <dave.morris+dsh@manchester.ac.uk>" would keep the
+       address in the same domain as the person certifying; an address on
+       an unrelated domain would read as a stranger on the history.
+
+    3. Fix the file headers for that project.
+
+       These files carry the GPL <meta:header> block, as our licence rules
+       require. The holder line here is:
+
+           Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+
+       Calycopis-broker uses:
+
+           Copyright (c) 2026, University of Manchester (http://www.manchester.ac.uk/)
+
+       Substitute the holder, and update the AIMetrics entry to describe
+       the agent and model of the session doing the port. Note that an
+       `.env` file is not a dotfile, so it is not exempt from the header.
+
+    4. Add the AGENTS.md section.
+
+       Calycopis-broker already has a "Coding conventions" section with
+       bullets for agents/rules/*.mdc. Either add a subsection there or
+       make it a top-level section, covering:
+
+         - the two identities (agent author, human committer/signatory);
+         - use bin/agent-commit, never plain git commit;
+         - the approval gate, stated in the same terms;
+         - the trailer order (Signed-off-by after AIMetrics);
+         - bin/setup-agent-git and what it enables.
+
+    5. Enable the guard in each clone.
+
+           bin/setup-agent-git
+
+       core.hooksPath lives in .git/config and is not versioned, so this
+       is a per-clone step. The wrapper works without it; the guard only
+       adds enforcement.
+
+    6. Verify before relying on it. See the next section.
+
+# -----------------------------------------------------
+# Verification, as run here.
+#[root@lithosia-dsh-pod]
+
+    On a scratch branch, so nothing lands in history:
+
+        git checkout -b dco-verify
+
+        # 1. The wrapper produces the right shape.
+        bin/agent-commit --allow-empty -m "test: identity"
+        git log -1 --format='%an <%ae> / %cn <%ce>'
+        git log -1 --format='%(trailers:key=Signed-off-by)'
+
+        # 2. A message on stdin is preserved and signed off.
+        printf 'test\n\nAIMetrics: []\n' | bin/agent-commit --allow-empty -F -
+
+        # 3. A plain commit from an agent session must fail.
+        git commit --allow-empty -m "plain"          # expect failure
+
+        # 4. A human shell must be unaffected.
+        env -u DSH_SESSION_ID git commit --allow-empty -m "human"
+
+        # 5. The wrapper is rejected if the identity is missing.
+        mv agents/git-identity.env agents/git-identity.env.hold
+        bin/agent-commit --allow-empty -m "nope"     # expect exit 2
+        mv agents/git-identity.env.hold agents/git-identity.env
+
+        git checkout main
+        git branch -D dco-verify
+
+    All six behaved as expected here. Two bugs were found and fixed while
+    doing this: sourcing the identity file was overwriting AGENT_GIT_*
+    environment overrides, and the guard matched the email as an unescaped
+    regular expression. Both scripts now resolve the identity the same way
+    - environment first, then the file - and the guard matches the address
+    exactly.
+
+# -----------------------------------------------------
+# Caveats, and things that are not covered.
+#[root@lithosia-dsh-pod]
+
+    a. `git commit --amend` keeps the ORIGINAL author. Amending a
+       human-authored commit leaves it human-authored; use
+       `git commit --amend --reset-author` to re-attribute it, which then
+       needs the same GIT_AUTHOR_* variables.
+
+    b. `git merge` never calls the wrapper. A merge commit made from an
+       agent session will be authored by the human and refused by the
+       guard, so either set the GIT_AUTHOR_* variables for the merge or
+       leave merges to a human.
+
+    c. `git rebase --signoff` adds the sign-off as the committer, which is
+       the human running it. That is the desired behaviour.
+
+    d. `git commit --no-verify` bypasses the guard. It is the human's
+       escape hatch, and the AGENTS.md text says so.
+
+    e. The guard fires for ANY commit made from a DSH session, including
+       one made by a script or a tool. Those must go through the wrapper.
+
+    f. The guard is only as good as DSH_SESSION_ID. Another harness will
+       not set it, so the guard will simply not fire - the wrapper still
+       produces the correct author and sign-off, so the history stays
+       right, but nothing enforces it.
+
+    g. An environment override (AGENT_GIT_NAME / AGENT_GIT_EMAIL) is
+       honoured by both the wrapper and the guard, so a one-off identity
+       stays self-consistent. An override that the guard disagrees with
+       would be worse than no guard, which is why they share the
+       resolution order.
+
+# -----------------------------------------------------
+# What to decide before porting.
+#[root@lithosia-dsh-pod]
+
+    1. The identity. The email ends up in permanent git history and
+       determines how GitHub attributes the commits. A plus-address on the
+       certifying person's own mailbox keeps the commit attributable to
+       them, which is what we did here.
+
+    2. Whether that project's DCO policy accepts an agent author with a
+       human sign-off, or wants a human author as well. The mechanism
+       supports either: `--author` is rejected by the wrapper, but a
+       project wanting a human author would simply not use it.
+
+    3. Whether the guard is enabled by default in that clone, or left for
+       individuals to switch on.
+
+# -----------------------------------------------------
+# Related notes.
+#[root@lithosia-dsh-pod]
+
+    notes/20261007-02-agents-rules.txt records the import of the coding
+    rules from Calycopis-broker, and what is worth back-porting from them.
+    This note covers the commit identity mechanism, which is a separate
+    change.
+
+# -----------------------------------------------------
+# -----------------------------------------------------

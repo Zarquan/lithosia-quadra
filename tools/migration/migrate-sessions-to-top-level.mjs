@@ -1,4 +1,36 @@
 #!/usr/bin/env node
+// <meta:header>
+//   <meta:licence>
+//     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+//
+//     This information is free software: you can redistribute it and/or modify
+//     it under the terms of the GNU General Public License as published by
+//     the Free Software Foundation, either version 3 of the License, or
+//     (at your option) any later version.
+//
+//     This information is distributed in the hope that it will be useful,
+//     but WITHOUT ANY WARRANTY; without even the implied warranty of
+//     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//     GNU General Public License for more details.
+//
+//     You should have received a copy of the GNU General Public License
+//     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//   </meta:licence>
+// </meta:header>
+//
+// AIMetrics: [
+//     {
+//     "timestamp": "2026-10-07T03:37:40",
+//     "name": "@deepseek-ai/dsh",
+//     "version": "0.2.0-rc.2",
+//     "model": "deepseek-flash",
+//     "contribution": {
+//       "value": 35,
+//       "units": "%"
+//       }
+//     }
+//   ]
+//
 /**
  * Rebase existing DSH sessions onto a top-level workspace directory.
  *
@@ -28,6 +60,15 @@
  * A complete copy of the sessions root and the three storage artifacts is
  * taken first, under <backup-root>/session-rebase-<timestamp>/.
  *
+ * LOCATIONS
+ * ---------
+ *   The harness home is read from the DSH_HOME environment variable, falling
+ *   back to ~/.dsh — the same precedence DSH's own `resolveDshHome` applies.
+ *   The sessions root and backup root then default to <dsh-home>/sessions and
+ *   <dsh-home>/backups, matching the shipped profile's `dshHomePath('sessions')`
+ *   layout, so no path flags are needed on a host DSH already configures.
+ *   Naming --dsh-home relocates the other two unless they are named too.
+ *
  * REQUIREMENTS
  * ------------
  *   - The DSH host (e.g. `dsh web`) MUST be stopped: it caches the workspace
@@ -41,6 +82,8 @@
  *   node migrate-sessions-to-top-level.mjs --dry-run
  *   node migrate-sessions-to-top-level.mjs --apply --yes
  *   node migrate-sessions-to-top-level.mjs --restore <backup-dir> --yes
+ *   node migrate-sessions-to-top-level.mjs --dry-run --only session-<uuid>
+ *   node migrate-sessions-to-top-level.mjs --apply --yes --only <uuid> ...
  *
  * See MIGRATION-README.md for the full runbook.
  */
@@ -54,17 +97,53 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
+import { constants, zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 
 const ZSTD_MAGIC = 0xfd2fb528;
 const NEWLINE = 0x0a;
+
+/**
+ * DSH stamps every frame it writes with a zstd content checksum
+ * (`CHECKSUM_OPTIONS` in `@deepseek-ai/dsh-session-persistence-jsonl`). Match
+ * it so a rebuilt header frame is the encoding DSH would have produced, not
+ * merely one it can read.
+ */
+const DSH_FRAME_OPTIONS = { params: { [constants.ZSTD_c_checksumFlag]: 1 } };
+
+/* ------------------------------------------------------------------ *
+ * DSH format pins
+ * ------------------------------------------------------------------ */
+
+/**
+ * The on-disk formats this script reads and writes. Each mirrors a DSH
+ * specification — `workspaceDomainSpec` in `@deepseek-ai/dsh-workspace` and
+ * `projectionCacheDomainSpec` in `@deepseek-ai/dsh-session-projection-cache`.
+ * A DSH upgrade that bumps one of these needs the matching code path here
+ * re-verified before the pin is changed. See MIGRATION-README.md.
+ */
+const WORKSPACE_DOMAIN = { name: 'workspace', version: 2 };
+const PROJCACHE_DOMAIN = {
+  name: 'session_projcache',
+  version: 7,
+  compatible: [3, 4, 5, 6],
+};
+
+/**
+ * Highest session-log format whose header semantics this script was verified
+ * against (`SESSION_FORMAT_VERSION` is 4 as of DSH 0.2.0-rc.2). A newer header
+ * is refused rather than rewritten, because a future format could move or
+ * rename the `cwd` field this migration depends on.
+ */
+const VALIDATED_SESSION_VERSION = 4;
 
 /* ------------------------------------------------------------------ *
  * zstd concatenated-frame container
@@ -131,6 +210,43 @@ function scanFrames(buf) {
   return { frames };
 }
 
+/**
+ * Exercise the frame scanner against a stream this script builds itself. DSH
+ * does not export `scanZstdFrames`, so this pins this copy's behaviour — frame
+ * boundaries, checksummed frames, torn tails, bad magic — rather than DSH's.
+ * A DSH-side change instead surfaces as a decoding refusal from decodeHeader.
+ */
+function assertFrameScannerContract() {
+  const frame = (text) => zstdCompressSync(Buffer.from(text, 'utf8'), DSH_FRAME_OPTIONS);
+  const parts = [frame('{"type":"session"}\n'), frame('{"a":1}\n'), frame('{"a":2}\n')];
+  const stream = Buffer.concat(parts);
+
+  const whole = scanFrames(stream);
+  if (whole.tornStart !== undefined || whole.frames.length !== parts.length) {
+    throw new Error('frame scanner drift: concatenated frames are no longer split correctly');
+  }
+  let offset = 0;
+  for (const [index, part] of parts.entries()) {
+    if (whole.frames[index].start !== offset || whole.frames[index].end !== offset + part.length) {
+      throw new Error(`frame scanner drift: frame ${index} boundary is wrong`);
+    }
+    offset += part.length;
+  }
+
+  const torn = scanFrames(stream.subarray(0, stream.length - 5));
+  if (torn.frames.length !== 2 || torn.tornStart !== parts[0].length + parts[1].length) {
+    throw new Error('frame scanner drift: a torn trailing frame is no longer detected');
+  }
+
+  let rejected = false;
+  try {
+    scanFrames(Buffer.concat([Buffer.from([0, 0, 0, 0]), parts[0]]));
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error('frame scanner drift: bad frame magic is no longer rejected');
+}
+
 /* ------------------------------------------------------------------ *
  * sessions-root layout (mirrors DSH's projection of cwd -> directory)
  * ------------------------------------------------------------------ */
@@ -162,6 +278,42 @@ function projectKey(cwd) {
     }
   }
   return `--${(readable.replace(/^-+/, '') || 'root').slice(0, 251)}--`;
+}
+
+/**
+ * `projectKey` golden values, captured by running DSH's own implementation
+ * (`@deepseek-ai/dsh-session-persistence-jsonl`, which does not export it).
+ * They are the contract this copy is held to: if the encoding ever drifts,
+ * sessions get filed under the wrong project directory.
+ */
+const PROJECT_KEY_GOLDEN = [
+  ['/Calycopis', '--Calycopis--'],
+  [
+    '/Calycopis/Calycopis-broker/Calycopis-broker-uksrc-zrq',
+    '--Calycopis-Calycopis-broker-Calycopis-broker-uksrc-zrq--',
+  ],
+  ['/Zarquan/lithosia-quadra', '--Zarquan-lithosia-quadra--'],
+  ['/', '--root--'],
+  ['/trailing/slash/', '--trailing-slash---'],
+  ['/a b', '--a~0020b--'],
+  ['C:\\Users\\x', '--C-Users-x--'],
+  ['/Calycopis/\u65e5\u672c\u8a9e', '--Calycopis-~65E5~672C~8A9E--'],
+  ['/sess~tilde', '--sess~007Etilde--'],
+];
+
+/** Fail loudly if this copy of `projectKey` no longer matches DSH's. */
+function assertProjectKeyContract() {
+  for (const [path, expected] of PROJECT_KEY_GOLDEN) {
+    const actual = projectKey(path);
+    if (actual !== expected) {
+      throw new Error(
+        `projectKey drift: '${path}' encodes to '${actual}' but DSH produces '${expected}'`,
+      );
+    }
+  }
+  if (projectKey(`/${'x'.repeat(300)}`) !== `--${'x'.repeat(251)}--`) {
+    throw new Error('projectKey drift: over-long paths no longer truncate to 251 characters');
+  }
 }
 
 /** Canonical generation filename -> format version (`session.jsonl` is v0). */
@@ -237,7 +389,7 @@ function rewriteHeaderCwd(file, targetCwd) {
   if (plain) {
     out = Buffer.concat([line, bytes.subarray(headerEnd)]);
   } else {
-    const newFrame = zstdCompressSync(line);
+    const newFrame = zstdCompressSync(line, DSH_FRAME_OPTIONS);
     const tail = bytes.subarray(headerEnd);
     out = Buffer.concat([newFrame, tail]);
     // The rewritten frame 0 must be the only byte-range difference; any torn
@@ -337,22 +489,43 @@ function listProjectDirs(sessionsRoot) {
 }
 
 /**
- * Build the migration plan: one entry per stored session whose header cwd is
- * not already the target.
+ * Session ids are stored as `session-<uuid>`; accept the bare uuid too, so a
+ * value taken from the GUI and one taken from a directory name both name the
+ * same session. The prefix is stripped from BOTH sides, keeping it symmetric.
+ *
+ * @param {string} value - a stored id or a user-supplied one.
+ * @returns {string} the id without its `session-` prefix.
  */
-function buildPlan({ sessionsRoot, target }) {
+function normalizeSessionId(value) {
+  return value.startsWith('session-') ? value.slice('session-'.length) : value;
+}
+
+/**
+ * Build the migration plan: one entry per stored session whose header cwd is
+ * not already the target. `only` (a list of session ids) narrows the plan to
+ * just those sessions. Every session it excludes is reported back as
+ * `unselected`, and an id that matches no stored session at all is surfaced as
+ * `unknown`, so a typo can never silently migrate nothing.
+ *
+ * @returns {{plan: object[], skipped: object[], unselected: object[], unknown: string[]}}
+ */
+function buildPlan({ sessionsRoot, target, only = [], allowNewerFormat = false }) {
+  const requested = only.length === 0 ? undefined : new Set(only.map(normalizeSessionId));
   const plan = [];
   const skipped = [];
+  const unselected = [];
+  const seen = new Set();
   for (const projectDir of listProjectDirs(sessionsRoot)) {
     for (const entry of readdirSync(projectDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const dir = join(projectDir, entry.name);
       const id = entry.name;
+      seen.add(normalizeSessionId(id));
       const generations = readdirSync(dir)
         .filter((name) => versionOf(name) !== undefined)
         .map((name) => ({ name, version: versionOf(name) }));
       if (generations.length === 0) {
-        skipped.push({ id, dir, reason: 'no session generation file' });
+        skipped.push({ id, dir, reason: 'no session generation file', blocking: true });
         continue;
       }
       generations.sort((a, b) => b.version - a.version);
@@ -361,11 +534,26 @@ function buildPlan({ sessionsRoot, target }) {
       try {
         header = readHeader(primary);
       } catch (error) {
-        skipped.push({ id, dir, reason: `unreadable header: ${error.message}` });
+        skipped.push({ id, dir, reason: `unreadable header: ${error.message}`, blocking: true });
         continue;
       }
       if (typeof header.cwd !== 'string') {
-        skipped.push({ id, dir, reason: 'header carries no cwd' });
+        skipped.push({ id, dir, reason: 'header carries no cwd', blocking: true });
+        continue;
+      }
+      if (
+        !allowNewerFormat &&
+        typeof header.version === 'number' &&
+        header.version > VALIDATED_SESSION_VERSION
+      ) {
+        skipped.push({
+          id,
+          dir,
+          reason:
+            `session format v${header.version} is newer than the validated ` +
+            `v${VALIDATED_SESSION_VERSION}`,
+          blocking: true,
+        });
         continue;
       }
       const expectedDirName = projectKey(header.cwd);
@@ -381,16 +569,25 @@ function buildPlan({ sessionsRoot, target }) {
         layoutMatches,
       };
       if (header.cwd === target) {
-        skipped.push({ ...entryPlan, reason: 'already on target workspace' });
+        // Benign: the session is already where it belongs, so it never blocks.
+        skipped.push({ ...entryPlan, reason: 'already on target workspace', blocking: false });
         continue;
       }
       entryPlan.newDirName = projectKey(target);
       entryPlan.newDir = join(sessionsRoot, entryPlan.newDirName, id);
+      if (requested !== undefined && !requested.has(normalizeSessionId(id))) {
+        unselected.push(entryPlan);
+        continue;
+      }
       plan.push(entryPlan);
     }
   }
-  plan.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-  return { plan, skipped };
+  const newestFirst = (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0);
+  plan.sort(newestFirst);
+  unselected.sort(newestFirst);
+  const unknown =
+    requested === undefined ? [] : only.filter((value) => !seen.has(normalizeSessionId(value)));
+  return { plan, skipped, unselected, unknown };
 }
 
 /* ------------------------------------------------------------------ *
@@ -429,7 +626,27 @@ function rewriteWorkspaceRegistry({
   }
   const targetId = Object.keys(workspaces).find((id) => workspaces[id].path === target);
   if (targetId === undefined) {
-    throw new Error(`${workspaceJsonPath}: no workspace record for '${target}'`);
+    // DSH stores canonical workspace paths, so a miss here can mean the
+    // registry holds a non-canonical spelling. Point that out rather than
+    // leaving the caller to guess why an existing directory is unregistered.
+    const aliases = Object.values(workspaces)
+      .map((record) => record.path)
+      .filter((path) => {
+        try {
+          return realpathSync(path) === target;
+        } catch {
+          return false;
+        }
+      });
+    throw new Error(
+      `${workspaceJsonPath}: no workspace record for '${target}'` +
+        (aliases.length > 0
+          ? `\n  note: record path(s) ${aliases
+              .map((path) => `'${path}'`)
+              .join(', ')} resolve to the target; DSH stores canonical workspace paths, ` +
+            'so repair that record before migrating'
+          : ''),
+    );
   }
 
   const moved = new Set(migratedIds);
@@ -524,46 +741,77 @@ function assertRegistryConsistency(doc) {
   }
 }
 
-/** Repoint projection-cache identity cwd so cached titles/stats stay valid. */
+/**
+ * Repoint projection-cache identity cwd so cached titles/stats stay valid.
+ *
+ * The cache is derived data — a fold shortcut DSH rebuilds on a cold read, and
+ * its own store discards a record whose version stamp it does not accept — so a
+ * document in an unrecognised format is reported and left alone rather than
+ * rewritten or treated as fatal.
+ *
+ * @returns {{updated: string[], skipped: string[]}} human-readable lines.
+ */
 function rewriteProjectionCaches({ dshHome, target, migratedIds }) {
-  const written = [];
+  const updated = [];
+  const skipped = [];
+  const accepted = [PROJCACHE_DOMAIN.version, ...PROJCACHE_DOMAIN.compatible];
   const moved = new Set(migratedIds);
 
   const monolithic = join(dshHome, 'storages', 'session_projcache.json');
   if (existsSync(monolithic)) {
     const doc = readJson(monolithic);
-    const sessions = doc?.tables?.sessions ?? {};
-    let touched = 0;
-    for (const [id, value] of Object.entries(sessions)) {
-      if (!moved.has(id)) continue;
-      if (value?.identity?.cwd === target) continue;
-      value.identity = { ...(value.identity ?? {}), cwd: target };
-      touched += 1;
-    }
-    if (touched > 0) {
-      writeJsonAtomic(monolithic, doc);
-      written.push(`${monolithic} (${touched})`);
+    const unit = doc?.unit;
+    if (unit?.name !== PROJCACHE_DOMAIN.name) {
+      skipped.push(`${monolithic}: not a '${PROJCACHE_DOMAIN.name}' unit`);
+    } else if (!accepted.includes(unit.version)) {
+      skipped.push(`${monolithic}: format v${unit.version} outside v${accepted.join('/v')}`);
+    } else {
+      const sessions = doc?.tables?.sessions ?? {};
+      let touched = 0;
+      for (const [id, value] of Object.entries(sessions)) {
+        if (!moved.has(id)) continue;
+        if (value?.identity?.cwd === target) continue;
+        value.identity = { ...(value.identity ?? {}), cwd: target };
+        touched += 1;
+      }
+      if (touched > 0) {
+        writeJsonAtomic(monolithic, doc);
+        updated.push(`${monolithic} (${touched})`);
+      }
     }
   }
 
   const rowsDir = join(dshHome, 'storages', 'session_projcache', 'sessions');
   if (existsSync(rowsDir)) {
     let touched = 0;
+    let refused = 0;
+    const refusedVersions = new Set();
     for (const name of readdirSync(rowsDir)) {
       if (!name.endsWith('.json')) continue;
       const id = name.slice(0, -'.json'.length);
       if (!moved.has(id)) continue;
       const path = join(rowsDir, name);
       const doc = readJson(path);
+      if (!accepted.includes(doc?.version)) {
+        refused += 1;
+        refusedVersions.add(doc?.version);
+        continue;
+      }
       if (doc?.record?.identity?.cwd === target) continue;
       doc.record = doc.record ?? {};
       doc.record.identity = { ...(doc.record.identity ?? {}), cwd: target };
       writeJsonAtomic(path, doc);
       touched += 1;
     }
-    if (touched > 0) written.push(`${rowsDir} (${touched})`);
+    if (touched > 0) updated.push(`${rowsDir} (${touched})`);
+    if (refused > 0) {
+      skipped.push(
+        `${rowsDir}: ${refused} row(s) at format ` +
+          `${[...refusedVersions].map((v) => `v${v}`).join('/')} left untouched`,
+      );
+    }
   }
-  return written;
+  return { updated, skipped };
 }
 
 /* ------------------------------------------------------------------ *
@@ -668,23 +916,116 @@ function assertRealDirectory(path, label) {
   if (!statSync(path).isDirectory()) throw new Error(`${label} is not a directory: ${path}`);
 }
 
+/**
+ * Canonicalize the target the way DSH stores a workspace path
+ * (`realpathNormalize` in `@deepseek-ai/dsh-workspace`): trailing slashes, `..`
+ * segments and symlinks all resolved. The header cwd written here is later
+ * realpath'd by DSH and compared against the registry record, and the registry
+ * lookup in this script is a literal string compare, so both sides must be
+ * canonical.
+ *
+ * Only the target needs this. DSH resolves its own home from DSH_HOME with
+ * `resolve`, not `realpath`, so the sessions root and storages stay as given.
+ *
+ * @param {string} path - target workspace directory, already known to exist.
+ * @returns {string} the canonical absolute path.
+ */
+function canonicalizeTarget(path) {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    throw new Error(`cannot canonicalize target workspace '${path}': ${error.message}`);
+  }
+}
+
+/**
+ * Read-only compatibility check, run before anything is written.
+ *
+ * The workspace registry is pinned hard: DSH opens it as a whole-unit document
+ * and its storage layer rejects a version it does not expect, so writing the
+ * wrong shape there would leave the harness unable to open its own registry.
+ * The derived projection cache is deliberately not pinned here — it is a fold
+ * shortcut that DSH rebuilds, and `rewriteProjectionCaches` skips rather than
+ * rewrites any document whose version it does not recognise.
+ *
+ * The two self-tests pin behaviour DSH does not export (`projectKey` and the
+ * frame scanner), so an accidental change to this script's copies fails here
+ * instead of mis-filing sessions or corrupting logs.
+ */
+function assertKnownFormats({ workspaceJsonPath }) {
+  assertProjectKeyContract();
+  assertFrameScannerContract();
+
+  const doc = readJson(workspaceJsonPath);
+  const unit = doc?.unit;
+  if (unit?.name !== WORKSPACE_DOMAIN.name) {
+    throw new Error(
+      `${workspaceJsonPath}: expected a '${WORKSPACE_DOMAIN.name}' unit, found '${unit?.name}'`,
+    );
+  }
+  if (unit.version !== WORKSPACE_DOMAIN.version) {
+    throw new Error(
+      `${workspaceJsonPath}: stored format v${unit.version}, expected v${WORKSPACE_DOMAIN.version}; ` +
+        'the workspace registry schema changed, so this script needs updating before it can migrate',
+    );
+  }
+  if (doc?.global === undefined || doc?.tables?.workspaces === undefined) {
+    throw new Error(`${workspaceJsonPath}: unexpected workspace registry shape`);
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * CLI
  * ------------------------------------------------------------------ */
 
+/** Expand `~`, `~/` and `~\` against the operating-system home, exactly as DSH does. */
+function expandHomePath(path) {
+  if (path === '~') return homedir();
+  if (path.startsWith('~/') || path.startsWith('~\\')) return join(homedir(), path.slice(2));
+  return path;
+}
+
+/**
+ * Resolve the DeepSeek Harness home with DSH's own precedence: `$DSH_HOME`
+ * when it is set to a non-blank value, otherwise `~/.dsh`. Kept in step with
+ * `resolveDshHome` in `@deepseek-ai/dsh-home-paths`, which is what the shipped
+ * profile's `dshHomePath('sessions')` uses to place the sessions root.
+ *
+ * @param {Record<string, string | undefined>} [env] - environment to read.
+ * @returns {string} absolute harness home.
+ */
+function resolveDshHome(env = process.env) {
+  const configured = env.DSH_HOME;
+  const fromEnv = configured !== undefined && configured.trim().length > 0;
+  return resolve(expandHomePath(fromEnv ? configured : join(homedir(), '.dsh')));
+}
+
+/** Read the value following a flag, failing loudly when it is missing. */
+function flagValue(argv, index, flag) {
+  const value = argv[index];
+  if (value === undefined || value.length === 0) throw new Error(`${flag} requires a value`);
+  return value;
+}
+
 function parseArgs(argv) {
+  const dshHome = resolveDshHome();
   const options = {
     target: '/Calycopis',
-    sessionsRoot: '/opt/dsh/sessions',
-    dshHome: '/opt/dsh',
-    backupRoot: '/opt/dsh/backups',
+    dshHome,
+    sessionsRoot: join(dshHome, 'sessions'),
+    backupRoot: join(dshHome, 'backups'),
     dryRun: false,
     apply: false,
     yes: false,
     keepProjects: false,
     forceRunning: false,
+    allowSkipped: false,
+    allowNewerFormat: false,
+    only: [],
     restore: undefined,
   };
+  let sessionsRootGiven = false;
+  let backupRootGiven = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
@@ -693,19 +1034,35 @@ function parseArgs(argv) {
       case '--yes': case '-y': options.yes = true; break;
       case '--keep-projects': options.keepProjects = true; break;
       case '--force-running': options.forceRunning = true; break;
-      case '--target': options.target = argv[++i]; break;
-      case '--sessions-root': options.sessionsRoot = argv[++i]; break;
-      case '--dsh-home': options.dshHome = argv[++i]; break;
-      case '--backup-root': options.backupRoot = argv[++i]; break;
-      case '--restore': options.restore = argv[++i]; break;
+      case '--allow-skipped': options.allowSkipped = true; break;
+      case '--allow-newer-format': options.allowNewerFormat = true; break;
+      case '--only': options.only.push(flagValue(argv, ++i, arg)); break;
+      case '--target': options.target = flagValue(argv, ++i, arg); break;
+      case '--sessions-root':
+        options.sessionsRoot = flagValue(argv, ++i, arg);
+        sessionsRootGiven = true;
+        break;
+      case '--dsh-home': options.dshHome = flagValue(argv, ++i, arg); break;
+      case '--backup-root':
+        options.backupRoot = flagValue(argv, ++i, arg);
+        backupRootGiven = true;
+        break;
+      case '--restore': options.restore = flagValue(argv, ++i, arg); break;
       case '--help': case '-h': options.help = true; break;
       default: throw new Error(`unknown argument: ${arg}`);
     }
   }
-  options.target = resolve(options.target);
-  options.sessionsRoot = resolve(options.sessionsRoot);
-  options.dshHome = resolve(options.dshHome);
-  options.backupRoot = resolve(options.backupRoot);
+  // The harness home anchors the other two: naming --dsh-home relocates the
+  // default sessions and backup roots beneath it unless they are named too.
+  options.dshHome = resolve(expandHomePath(options.dshHome));
+  options.target = resolve(expandHomePath(options.target));
+  options.sessionsRoot = sessionsRootGiven
+    ? resolve(expandHomePath(options.sessionsRoot))
+    : join(options.dshHome, 'sessions');
+  options.backupRoot = backupRootGiven
+    ? resolve(expandHomePath(options.backupRoot))
+    : join(options.dshHome, 'backups');
+  if (options.restore !== undefined) options.restore = resolve(expandHomePath(options.restore));
   return options;
 }
 
@@ -714,6 +1071,7 @@ const USAGE = `Rebase DSH sessions onto a top-level workspace directory.
   node migrate-sessions-to-top-level.mjs --dry-run
   node migrate-sessions-to-top-level.mjs --apply --yes
   node migrate-sessions-to-top-level.mjs --restore <backup-dir> --yes
+  node migrate-sessions-to-top-level.mjs --dry-run --only session-<uuid>
 
 Options:
   --dry-run            Report the plan without writing anything (safe while DSH runs).
@@ -721,11 +1079,27 @@ Options:
   --yes                Required for --apply and --restore: confirm the operation.
   --restore <dir>      Undo a previous run from its backup directory.
   --target <path>      Target workspace directory (default: /Calycopis).
-  --sessions-root <p>  Sessions root (default: /opt/dsh/sessions).
-  --dsh-home <path>    DSH home holding storages (default: /opt/dsh).
-  --backup-root <p>    Where backups are written (default: /opt/dsh/backups).
+  --sessions-root <p>  Sessions root (default: $DSH_HOME/sessions).
+  --dsh-home <path>    DSH home holding storages (default: $DSH_HOME, or ~/.dsh).
+  --backup-root <p>    Where backups are written (default: $DSH_HOME/backups).
+  --only <session-id>  Migrate only the named session(s). Repeatable. Accepts
+                       'session-<uuid>' or the bare uuid. Every other session is
+                       left untouched and reported as "Not selected".
   --keep-projects      Leave emptied descendant workspaces registered instead of removing them.
+  --allow-skipped      Migrate even when a stored session cannot be read; such
+                       sessions are left behind.
+  --allow-newer-format Migrate sessions whose log format is newer than the
+                       validated v4 header layout.
   --force-running      Proceed even though a DSH host appears to be running (unsafe).
+
+The harness home is read from DSH_HOME (falling back to ~/.dsh, as DSH itself
+resolves it). Naming --dsh-home also relocates the default --sessions-root and
+--backup-root beneath it, unless those are named too.
+
+Before writing anything the script checks that the on-disk formats are the ones
+it understands: an unexpected workspace registry version aborts, while an
+unrecognised projection-cache format is reported and skipped, since DSH
+rebuilds that cache.
 `;
 
 /* ------------------------------------------------------------------ *
@@ -757,14 +1131,12 @@ function main() {
       return;
     }
     const result = restore({
-      backupDir: resolve(options.restore),
+      backupDir: options.restore,
       dshHome: options.dshHome,
       sessionsRoot: options.sessionsRoot,
     });
     process.stdout.write(
-      `Restored ${result.restored.length} session(s) and the storage artifacts from ${resolve(
-        options.restore,
-      )}.\n`,
+      `Restored ${result.restored.length} session(s) and the storage artifacts from ${options.restore}.\n`,
     );
     return;
   }
@@ -799,16 +1171,46 @@ function main() {
   assertRealDirectory(options.target, 'target workspace');
   assertRealDirectory(options.sessionsRoot, 'sessions root');
 
+  // The registry stores canonical paths, so migrate toward the canonical
+  // spelling even when the caller named a symlink, a trailing slash or `..`.
+  const typedTarget = options.target;
+  options.target = canonicalizeTarget(options.target);
+
   const workspaceJsonPath = join(options.dshHome, 'storages', 'workspace.json');
   if (!existsSync(workspaceJsonPath)) throw new Error(`workspace registry not found: ${workspaceJsonPath}`);
 
-  const { plan, skipped } = buildPlan({
+  // Fail before any mutation, including before the backup: a format this
+  // script does not understand must be refused while the tree is still intact.
+  assertKnownFormats({ workspaceJsonPath });
+
+  const { plan, skipped, unselected, unknown } = buildPlan({
     sessionsRoot: options.sessionsRoot,
     target: options.target,
+    only: options.only,
+    allowNewerFormat: options.allowNewerFormat,
   });
 
-  process.stdout.write(`Target workspace : ${options.target}\n`);
+  // A named session that matches nothing is a typo, not an empty migration:
+  // fail before touching anything, backup included.
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `--only names ${unknown.length} session(s) not found under ${options.sessionsRoot}:\n` +
+        `${unknown.map((id) => `  ${id}\n`).join('')}` +
+        'Check the id, or run without --only to see every session.\n',
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  process.stdout.write(
+    `Target workspace : ${options.target}${
+      options.target === typedTarget ? '' : ` (canonicalized from '${typedTarget}')`
+    }\n`,
+  );
   process.stdout.write(`Sessions root    : ${options.sessionsRoot}\n`);
+  if (options.only.length > 0) {
+    process.stdout.write(`Only             : ${options.only.join(', ')}\n`);
+  }
   process.stdout.write(`Sessions to move : ${plan.length}\n`);
   for (const entry of plan) {
     process.stdout.write(
@@ -822,9 +1224,37 @@ function main() {
       );
     }
   }
+  if (unselected.length > 0) {
+    process.stdout.write(`Not selected     : ${unselected.length} (excluded by --only)\n`);
+    for (const entry of unselected) process.stdout.write(`  ${entry.id}\n`);
+  }
   if (skipped.length > 0) {
     process.stdout.write(`Skipped          : ${skipped.length}\n`);
     for (const entry of skipped) process.stdout.write(`  ${entry.id}: ${entry.reason}\n`);
+  }
+
+  // A stored session that cannot be read would be left behind, so refuse by
+  // default: a partially migrated history is worse than none. `--only` narrows
+  // the check to the sessions actually requested, and `--allow-skipped` is the
+  // explicit escape hatch. Dry runs report the same refusal so a preview
+  // predicts what an apply would do.
+  const requestedIds = new Set(options.only.map(normalizeSessionId));
+  const blocking = skipped.filter(
+    (entry) =>
+      entry.blocking === true &&
+      (requestedIds.size === 0 || requestedIds.has(normalizeSessionId(entry.id))),
+  );
+  if (blocking.length > 0 && !options.allowSkipped) {
+    process.stderr.write(
+      `${
+        options.dryRun ? 'dry run: would refuse to migrate' : 'refusing to migrate'
+      }: ${blocking.length} stored session(s) cannot be read:\n` +
+        blocking.map((entry) => `  ${entry.id}: ${entry.reason}\n`).join('') +
+        'They would be left behind. Fix them, name the sessions you want with --only,\n' +
+        'or pass --allow-skipped to migrate the rest anyway.\n',
+    );
+    process.exitCode = 2;
+    return;
   }
 
   if (options.dryRun) {
@@ -833,7 +1263,11 @@ function main() {
   }
 
   if (plan.length === 0) {
-    process.stdout.write('Nothing to do: every session already targets the workspace.\n');
+    process.stdout.write(
+      options.only.length > 0
+        ? 'Nothing to do: none of the sessions named by --only still need migrating (see Skipped above).\n'
+        : 'Nothing to do: every session already targets the workspace.\n',
+    );
     return;
   }
 
@@ -905,15 +1339,27 @@ function main() {
     target: options.target,
     migratedIds,
   });
-  for (const line of caches) process.stdout.write(`projcache: updated ${line}\n`);
+  for (const line of caches.updated) process.stdout.write(`projcache: updated ${line}\n`);
+  for (const line of caches.skipped) {
+    process.stdout.write(`projcache: skipped ${line} (DSH rebuilds this cache)\n`);
+  }
 
-  // Prune descendant project directories that are now empty.
+  // Remove only the project directories this run actually vacated. Scanning
+  // the root for empty directories instead would delete unrelated ones —
+  // `_no-cwd`, a project whose sessions were archived earlier, or a directory
+  // holding only non-generation artifacts.
   if (!options.keepProjects) {
-    for (const projectDir of listProjectDirs(options.sessionsRoot)) {
-      if (readdirSync(projectDir).length === 0) {
-        rmSync(projectDir, { recursive: true, force: true });
-        process.stdout.write(`removed empty project directory ${projectDir}\n`);
-      }
+    const vacated = new Set(
+      manifest.migrated
+        .filter((entry) => entry.currentProjectDirName !== entry.newDirName)
+        .map((entry) => entry.currentProjectDirName),
+    );
+    for (const name of vacated) {
+      const projectDir = join(options.sessionsRoot, name);
+      if (!existsSync(projectDir)) continue;
+      if (readdirSync(projectDir).length > 0) continue; // another session still lives here
+      rmSync(projectDir, { recursive: true, force: true });
+      process.stdout.write(`removed vacated project directory ${projectDir}\n`);
     }
   }
 

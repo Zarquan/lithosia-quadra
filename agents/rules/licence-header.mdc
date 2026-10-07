@@ -1,0 +1,149 @@
+---
+description: Add GPL licence header to all new source files in the lithosia-quadra project
+alwaysApply: true
+---
+
+When you create a new source file in this project, add the following GPL licence header at the very top of the file, before any code.
+
+Adapt the comment syntax to match the file type as shown below.
+
+> **Imported from the Calycopis-broker project** (`/Calycopis/Calycopis-broker/agents/rules/licence-header.mdc`)
+> and adapted for this project: the copyright holder here is **Wizzard Solutions
+> Ltd**, not the University of Manchester, and the JavaScript and Markdown
+> variants have been added because this project is mostly `.mjs` and `.md`.
+
+### JavaScript and Node files (`.mjs`, `.js`, `.cjs`) — `//` comments:
+
+```
+// <meta:header>
+//   <meta:licence>
+//     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+//
+//     This information is free software: you can redistribute it and/or modify
+//     it under the terms of the GNU General Public License as published by
+//     the Free Software Foundation, either version 3 of the License, or
+//     (at your option) any later version.
+//
+//     This information is distributed in the hope that it will be useful,
+//     but WITHOUT ANY WARRANTY; without even the implied warranty of
+//     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//     GNU General Public License for more details.
+//
+//     You should have received a copy of the GNU General Public License
+//     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//   </meta:licence>
+// </meta:header>
+//
+// AIMetrics: []
+//
+```
+
+If the file starts with a shebang (`#!/usr/bin/env node`), the shebang stays on
+the first line and the header immediately follows it.
+
+### Python (`.py`), YAML (`.yaml`, `.yml`), shell (`.sh`) and other `#`-commented files:
+
+```
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+# AIMetrics: []
+#
+```
+
+### Java (`.java`) and other C-style `/* */` files:
+
+```
+/*
+ * <meta:header>
+ *   <meta:licence>
+ *     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+ *
+ *     This information is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This information is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *   </meta:licence>
+ * </meta:header>
+ *
+ * AIMetrics: []
+ *
+ */
+```
+
+### Markdown (`.md`) and HTML/XML (`.html`, `.xml`) — `<!-- -->` comments:
+
+```
+<!--
+  <meta:header>
+    <meta:licence>
+      Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+
+      This information is free software: you can redistribute it and/or modify
+      it under the terms of the GNU General Public License as published by
+      the Free Software Foundation, either version 3 of the License, or
+      (at your option) any later version.
+
+      This information is distributed in the hope that it will be useful,
+      but WITHOUT ANY WARRANTY; without even the implied warranty of
+      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+      GNU General Public License for more details.
+
+      You should have received a copy of the GNU General Public License
+      along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    </meta:licence>
+  </meta:header>
+
+  AIMetrics: []
+-->
+```
+
+Rules:
+
+- The copyright year must be the current year at the time the file is created.
+- The `AIMetrics` block starts as `[]` and is populated by the `ai-metrics` rule.
+- The header must be the very first content in the file (before any `package`,
+  `import`, `"""`, or `<?xml` declarations) — except for a shebang line, and
+  except for YAML frontmatter, which must stay first for it to be parsed.
+- Do not add a licence header if the file already has a `<meta:licence>` block.
+
+### Exempt files
+
+A licence header asserts copyright over the project's authored work. Files that
+are not authored work, or that a tool owns, carry no header:
+
+- **Dotfiles** — any file whose name begins with `.`, at any level. For example
+  `.gitignore`, `.gitattributes`, `.editorconfig`, `.env`, `.dockerignore`.
+- **Lockfiles and machine-generated files** — for example `pnpm-lock.yaml` or
+  `package-lock.json`, which are regenerated by their tool rather than written.
+- **`agents/rules/*.mdc`** — imported configuration, kept in the form it has
+  upstream in the Calycopis-broker project.
+
+Hand-authored configuration is **not** exempt: YAML, JSON, XML, Dockerfiles and
+shell scripts are project source and get a header, using the matching template
+above. A workflow file such as `.github/workflows/ci.yml` is authored work and
+gets one too — it is configuration with a `#` template, not a dotfile.
