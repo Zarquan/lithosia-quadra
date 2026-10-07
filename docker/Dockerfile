@@ -112,8 +112,9 @@ RUN chmod a+x /usr/local/bin/*.sh
 
 #
 # Run our initialisation script.
-# This needs to be run again when the container starts: at build time DSH_HOME is unset,
-# so the plugin installs into DSH's default home rather than the mounted one
-# the harness reads. The script is idempotent, so running it twice is safe.
+# This needs to be run again when the container starts: at build time DSH_HOME
+# is unset, so the plugin installs into DSH's default home rather than the
+# mounted one the harness reads. The script is idempotent, so running it twice
+# is safe.
 RUN /usr/local/bin/init-dsh.sh
 
