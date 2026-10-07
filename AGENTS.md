@@ -28,6 +28,16 @@
         "value": 100,
         "units": "%"
         }
+      },
+      {
+      "timestamp": "2026-10-07T03:43:36",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 5,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -53,7 +63,7 @@ after the moth *Lithosia quadra*.
 | `tools/migration/` | yes | session rebase tool and its runbook (`MIGRATION-README.md`) |
 | `notes/` | yes | dated operational notes |
 | `docker/Dockerfile` | untracked | container image that installs DSH and the web proxy plugin |
-| `attic/sessions/` | untracked | pre-transfer session directories, **not referenced by any tool** |
+| `attic/sessions/` | **no** (`.gitignore`) | pre-transfer session directories, **not referenced by any tool** |
 
 ## Non-negotiable safety rules
 
