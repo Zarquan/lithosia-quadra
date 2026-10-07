@@ -1085,13 +1085,22 @@ function main() {
   });
   for (const line of caches) process.stdout.write(`projcache: updated ${line}\n`);
 
-  // Prune descendant project directories that are now empty.
+  // Remove only the project directories this run actually vacated. Scanning
+  // the root for empty directories instead would delete unrelated ones —
+  // `_no-cwd`, a project whose sessions were archived earlier, or a directory
+  // holding only non-generation artifacts.
   if (!options.keepProjects) {
-    for (const projectDir of listProjectDirs(options.sessionsRoot)) {
-      if (readdirSync(projectDir).length === 0) {
-        rmSync(projectDir, { recursive: true, force: true });
-        process.stdout.write(`removed empty project directory ${projectDir}\n`);
-      }
+    const vacated = new Set(
+      manifest.migrated
+        .filter((entry) => entry.currentProjectDirName !== entry.newDirName)
+        .map((entry) => entry.currentProjectDirName),
+    );
+    for (const name of vacated) {
+      const projectDir = join(options.sessionsRoot, name);
+      if (!existsSync(projectDir)) continue;
+      if (readdirSync(projectDir).length > 0) continue; // another session still lives here
+      rmSync(projectDir, { recursive: true, force: true });
+      process.stdout.write(`removed vacated project directory ${projectDir}\n`);
     }
   }
 
