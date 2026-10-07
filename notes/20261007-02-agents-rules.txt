@@ -34,6 +34,16 @@
 #       "value": 100,
 #       "units": "%"
 #       }
+#     },
+#     {
+#     "interval": "2026-10-07T08:18:17/2026-10-07T08:18:42",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 15,
+#       "units": "%"
+#       }
 #     }
 #   ]
 #
@@ -76,6 +86,7 @@
 
         a5c186c Imported the agent coding rules from Calycopis-broker
         0d7e507 Added a header exemption for dotfiles and generated files
+        d39d6c8 Logged one AIMetrics entry per change, not per edit
 
     To review the differences, file by file:
 
@@ -116,6 +127,15 @@
         The closing paragraph referring to tools/migration is specific to
         this project. The rule text above it is unchanged from upstream.
 
+    5. The DSH-specific AGENTS.md sections.
+
+        "Credential scrubbing" and "Writing outside the workspace" record
+        behaviour of the DeepSeek Harness and its file sandbox. They are
+        useful here and meaningless upstream, which is a plain source
+        project with no harness and no sandbox. Added in 57b1daa and
+        f4b122b, the latter along with the bin/gh wrapper, whose default
+        path is a podman secret location.
+
 # -----------------------------------------------------
 # Changes worth back-porting to Calycopis-broker.
 #[root@lithosia-dsh-pod]
@@ -147,6 +167,17 @@
         separate section, with a rule/requirement table plus the exemption
         summary, is easier to follow, and it is the natural place to
         document where the name/version/model values come from.
+
+    5. One AIMetrics entry per change, not per edit.
+
+        Upstream records one entry per modification, with a timestamp, and
+        says nothing about a run of edits made as part of a single change.
+        A short burst of edits then produces a column of near-identical
+        entries, which records keystrokes rather than contribution. The
+        rule groups such a run into one entry using an ISO 8601 interval,
+        from the first edit to the last, and issue bodies follow the same
+        rule rather than always using a timestamp. Applied here in d39d6c8;
+        the text is in part 5 below.
 
 # -----------------------------------------------------
 # Text to apply, part 1. The "Exempt files" section for licence-header.mdc.
@@ -260,7 +291,7 @@
         |---|---|
         | [`licence-header.mdc`](agents/rules/licence-header.mdc) | Every new source file starts with the GPL `<meta:header>` block, using the comment syntax for its language and the project's copyright line. |
         | [`copyright-year.mdc`](agents/rules/copyright-year.mdc) | When a file carrying a `<meta:licence>` block is modified, bump its `Copyright (C) YYYY` to the current year. |
-        | [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc) | Every created or modified file header carries an `AIMetrics` block, appended to rather than replacing existing entries, and every agent commit message ends with an `AIMetrics` block using `interval` in place of `timestamp`. |
+        | [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc) | One `AIMetrics` entry per **change**, not per edit, appended to a file header rather than replacing existing entries: `timestamp` for a change made in one pass, or `interval` covering it when several edits were made in sequence. Every agent commit message ends with one using `interval`, and so does every GitHub issue an agent creates, in a fenced code block. |
         | [`unexpected-behaviour.mdc`](agents/rules/unexpected-behaviour.mdc) | Stop and ask before coding around unexpected behaviour from an API, service or component. |
 
         Headers are not required on files that are not authored work:
@@ -273,6 +304,42 @@
 
         Hand-authored configuration is not exempt: YAML, JSON, XML, Dockerfiles
         and shell scripts are source and get a header.
+
+# -----------------------------------------------------
+# Text to apply, part 5. One entry per change, for ai-metrics.mdc.
+#[root@lithosia-dsh-pod]
+
+    Replace the "Each entry records one agent/model contribution to the
+    file:" lead-in and the timestamp bullet that follows it:
+
+        Each entry records one agent/model contribution to the file. Log one
+        entry per **change**, not one per edit: a change made through several
+        edits in sequence is a single contribution.
+
+        - `timestamp` - for a change made in one pass: the date and time of the
+          modification, ISO 8601 format (YYYY-MM-DDThh:mm:ss).
+        - `interval` - for a change made through several edits in sequence: an
+          ISO 8601 interval covering them, from the first edit to the last (e.g.
+          `2026-02-14T15:30:00/2026-02-14T15:52:00`). Use this instead of
+          `timestamp` rather than adding an entry per edit, which turns a record
+          of who contributed what into a log of keystrokes. Commit messages
+          always use `interval`, because a commit summarises a session's work.
+
+    Add ahead of the first format block:
+
+        In every format below, substitute `interval` for `timestamp` when the
+        change spanned several edits in sequence.
+
+    Replace the issue-body bullet that requires a timestamp:
+
+        - Use `timestamp` for a change made in one pass, or `interval` when the
+          issue was written or revised through several edits in sequence - one
+          entry covering them, exactly as for a file header. (A commit message
+          always uses `interval`, because a commit summarises a session's work.)
+          Append a new entry for a later change rather than replacing existing
+          ones.
+
+    Plain hyphens where the real file has em-dashes, as in part 1.
 
 # -----------------------------------------------------
 # Things to check when applying this upstream.
@@ -300,6 +367,11 @@
        (0.1.1-rc.2 -> 0.2.0-rc.2, deepseek-v4-flash -> deepseek-flash).
        Upstream values may differ; take them from the session rather than
        copying ours.
+
+    f. Neither project should rewrite AIMetrics entries that were already
+       logged per edit. The rule changes what gets added from now on; the
+       existing entries are a truthful record of how the file was built,
+       and the rule against replacing them still stands.
 
 # -----------------------------------------------------
 # -----------------------------------------------------
