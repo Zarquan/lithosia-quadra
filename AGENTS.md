@@ -48,6 +48,16 @@
         "value": 10,
         "units": "%"
         }
+      },
+      {
+      "timestamp": "2026-10-07T04:19:49",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 25,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -71,6 +81,10 @@ after the moth *Lithosia quadra*.
 |---|---|---|
 | `dsh/` | **no** (`.gitignore`) | the **live** DSH home: sessions, storages, profiles, backups, credentials |
 | `tools/migration/` | yes | session rebase tool and its runbook (`MIGRATION-README.md`) |
+| `agents/rules/` | yes | coding rules imported from Calycopis-broker |
+| `agents/git-identity.env` | yes | the identity used as the author of agent commits |
+| `agents/hooks/` | yes | versioned git hooks, currently the DCO guard |
+| `bin/` | yes | agent tooling: `agent-commit`, `setup-agent-git` |
 | `notes/` | yes | dated operational notes |
 | `docker/Dockerfile` | untracked | container image that installs DSH and the web proxy plugin |
 | `attic/sessions/` | **no** (`.gitignore`) | pre-transfer session directories, **not referenced by any tool** |
@@ -207,9 +221,9 @@ per-language templates.
   what changed and why. Keep each change focused, and split unrelated work into
   separate commits. Every agent commit also ends with an `AIMetrics` block — see
   [Coding rules](#coding-rules).
-- **DCO sign-off**: `CONTRIBUTING.md` asks every commit to carry
-  `Signed-off-by:` (`git commit -s`). Note that the history so far, including
-  recent commits, does **not** carry the trailer.
+- **Commit identity and DCO sign-off**: agent commits are authored by the agent
+  and signed off by the human, through `bin/agent-commit`. See
+  [Commit identity and sign-off](#commit-identity-and-sign-off).
 - **Licence**: GPL-3.0-or-later (see `LICENSE`), applied through the
   `<meta:header>` block required by [Coding rules](#coding-rules). New
   `notes/*.txt` files keep the leading `<meta:header>` block and the
@@ -218,3 +232,51 @@ per-language templates.
 - **Style**: no new dependencies unless there is no alternative; comment the
   *why* (particularly where behaviour mirrors a DSH internal), and prefer a
   loud, early failure over a silent partial result.
+
+### Commit identity and sign-off
+
+`CONTRIBUTING.md` requires a `Signed-off-by:` trailer on every commit. Agent
+commits satisfy that without a human running git: the agent is recorded as the
+**author**, while the repository's configured user — the person who approved the
+change — remains the **committer**, so `git commit --signoff` names them.
+
+| Field | Value |
+|---|---|
+| Author | `DeepSeek Harness <zrq-github+dsh@metagrid.co.uk>`, from [`agents/git-identity.env`](agents/git-identity.env) |
+| Committer and `Signed-off-by` | your `.git/config` identity, e.g. `Zarquan <zrq-github@metagrid.co.uk>` |
+
+Commit with the wrapper, never with plain `git commit`:
+
+```bash
+bin/agent-commit -m "Message"
+bin/agent-commit -F -          # message on stdin
+```
+
+Rules for agents:
+
+- Commit **only after the human has explicitly approved the exact change set and
+  the commit message**. That approval *is* the DCO certification; nothing
+  enforces it technically, so do not read a general "looks good" as approval to
+  commit, and do not commit unprompted.
+- Pass whatever `git commit` arguments you need (`-m`, `-F -`, `--amend`,
+  `--allow-empty`). `--author` is rejected because the wrapper fixes it.
+- `AGENT_GIT_NAME`/`AGENT_GIT_EMAIL` override the committed identity for a
+  one-off; the guard resolves the identity the same way, so an override stays
+  self-consistent.
+- The `Signed-off-by` trailer is appended **after** the `AIMetrics` block.
+  `git interpret-trailers` reads both correctly.
+
+[`bin/setup-agent-git`](bin/setup-agent-git) additionally switches on the guard
+in [`agents/hooks/commit-msg`](agents/hooks/commit-msg), which refuses any
+commit made from a DSH session that did not come through the wrapper. It works
+by comparing the resolved author against the agent identity, and by requiring
+the sign-off; a human's own shell (`DSH_SESSION_ID` unset) is never policed.
+It is per clone, since it sets `core.hooksPath`, and `--no-verify` bypasses it.
+
+Caveats: `--amend` keeps the original author, so use `--reset-author` to
+re-attribute; `git merge` never calls the wrapper, so agent merges need the same
+`GIT_AUTHOR_*` variables or should be left to a human; `git rebase --signoff`
+signs off as the committer, which is correct.
+
+The commits made before this arrangement remain unsigned, deliberately — there
+is no backfill.
