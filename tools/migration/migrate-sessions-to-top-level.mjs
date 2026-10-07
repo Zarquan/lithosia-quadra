@@ -28,6 +28,15 @@
  * A complete copy of the sessions root and the three storage artifacts is
  * taken first, under <backup-root>/session-rebase-<timestamp>/.
  *
+ * LOCATIONS
+ * ---------
+ *   The harness home is read from the DSH_HOME environment variable, falling
+ *   back to ~/.dsh — the same precedence DSH's own `resolveDshHome` applies.
+ *   The sessions root and backup root then default to <dsh-home>/sessions and
+ *   <dsh-home>/backups, matching the shipped profile's `dshHomePath('sessions')`
+ *   layout, so no path flags are needed on a host DSH already configures.
+ *   Naming --dsh-home relocates the other two unless they are named too.
+ *
  * REQUIREMENTS
  * ------------
  *   - The DSH host (e.g. `dsh web`) MUST be stopped: it caches the workspace
@@ -60,6 +69,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 
@@ -672,12 +682,42 @@ function assertRealDirectory(path, label) {
  * CLI
  * ------------------------------------------------------------------ */
 
+/** Expand `~`, `~/` and `~\` against the operating-system home, exactly as DSH does. */
+function expandHomePath(path) {
+  if (path === '~') return homedir();
+  if (path.startsWith('~/') || path.startsWith('~\\')) return join(homedir(), path.slice(2));
+  return path;
+}
+
+/**
+ * Resolve the DeepSeek Harness home with DSH's own precedence: `$DSH_HOME`
+ * when it is set to a non-blank value, otherwise `~/.dsh`. Kept in step with
+ * `resolveDshHome` in `@deepseek-ai/dsh-home-paths`, which is what the shipped
+ * profile's `dshHomePath('sessions')` uses to place the sessions root.
+ *
+ * @param {Record<string, string | undefined>} [env] - environment to read.
+ * @returns {string} absolute harness home.
+ */
+function resolveDshHome(env = process.env) {
+  const configured = env.DSH_HOME;
+  const fromEnv = configured !== undefined && configured.trim().length > 0;
+  return resolve(expandHomePath(fromEnv ? configured : join(homedir(), '.dsh')));
+}
+
+/** Read the value following a flag, failing loudly when it is missing. */
+function flagValue(argv, index, flag) {
+  const value = argv[index];
+  if (value === undefined || value.length === 0) throw new Error(`${flag} requires a value`);
+  return value;
+}
+
 function parseArgs(argv) {
+  const dshHome = resolveDshHome();
   const options = {
     target: '/Calycopis',
-    sessionsRoot: '/opt/dsh/sessions',
-    dshHome: '/opt/dsh',
-    backupRoot: '/opt/dsh/backups',
+    dshHome,
+    sessionsRoot: join(dshHome, 'sessions'),
+    backupRoot: join(dshHome, 'backups'),
     dryRun: false,
     apply: false,
     yes: false,
@@ -685,6 +725,8 @@ function parseArgs(argv) {
     forceRunning: false,
     restore: undefined,
   };
+  let sessionsRootGiven = false;
+  let backupRootGiven = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
@@ -693,19 +735,32 @@ function parseArgs(argv) {
       case '--yes': case '-y': options.yes = true; break;
       case '--keep-projects': options.keepProjects = true; break;
       case '--force-running': options.forceRunning = true; break;
-      case '--target': options.target = argv[++i]; break;
-      case '--sessions-root': options.sessionsRoot = argv[++i]; break;
-      case '--dsh-home': options.dshHome = argv[++i]; break;
-      case '--backup-root': options.backupRoot = argv[++i]; break;
-      case '--restore': options.restore = argv[++i]; break;
+      case '--target': options.target = flagValue(argv, ++i, arg); break;
+      case '--sessions-root':
+        options.sessionsRoot = flagValue(argv, ++i, arg);
+        sessionsRootGiven = true;
+        break;
+      case '--dsh-home': options.dshHome = flagValue(argv, ++i, arg); break;
+      case '--backup-root':
+        options.backupRoot = flagValue(argv, ++i, arg);
+        backupRootGiven = true;
+        break;
+      case '--restore': options.restore = flagValue(argv, ++i, arg); break;
       case '--help': case '-h': options.help = true; break;
       default: throw new Error(`unknown argument: ${arg}`);
     }
   }
-  options.target = resolve(options.target);
-  options.sessionsRoot = resolve(options.sessionsRoot);
-  options.dshHome = resolve(options.dshHome);
-  options.backupRoot = resolve(options.backupRoot);
+  // The harness home anchors the other two: naming --dsh-home relocates the
+  // default sessions and backup roots beneath it unless they are named too.
+  options.dshHome = resolve(expandHomePath(options.dshHome));
+  options.target = resolve(expandHomePath(options.target));
+  options.sessionsRoot = sessionsRootGiven
+    ? resolve(expandHomePath(options.sessionsRoot))
+    : join(options.dshHome, 'sessions');
+  options.backupRoot = backupRootGiven
+    ? resolve(expandHomePath(options.backupRoot))
+    : join(options.dshHome, 'backups');
+  if (options.restore !== undefined) options.restore = resolve(expandHomePath(options.restore));
   return options;
 }
 
@@ -721,11 +776,15 @@ Options:
   --yes                Required for --apply and --restore: confirm the operation.
   --restore <dir>      Undo a previous run from its backup directory.
   --target <path>      Target workspace directory (default: /Calycopis).
-  --sessions-root <p>  Sessions root (default: /opt/dsh/sessions).
-  --dsh-home <path>    DSH home holding storages (default: /opt/dsh).
-  --backup-root <p>    Where backups are written (default: /opt/dsh/backups).
+  --sessions-root <p>  Sessions root (default: $DSH_HOME/sessions).
+  --dsh-home <path>    DSH home holding storages (default: $DSH_HOME, or ~/.dsh).
+  --backup-root <p>    Where backups are written (default: $DSH_HOME/backups).
   --keep-projects      Leave emptied descendant workspaces registered instead of removing them.
   --force-running      Proceed even though a DSH host appears to be running (unsafe).
+
+The harness home is read from DSH_HOME (falling back to ~/.dsh, as DSH itself
+resolves it). Naming --dsh-home also relocates the default --sessions-root and
+--backup-root beneath it, unless those are named too.
 `;
 
 /* ------------------------------------------------------------------ *
@@ -757,14 +816,12 @@ function main() {
       return;
     }
     const result = restore({
-      backupDir: resolve(options.restore),
+      backupDir: options.restore,
       dshHome: options.dshHome,
       sessionsRoot: options.sessionsRoot,
     });
     process.stdout.write(
-      `Restored ${result.restored.length} session(s) and the storage artifacts from ${resolve(
-        options.restore,
-      )}.\n`,
+      `Restored ${result.restored.length} session(s) and the storage artifacts from ${options.restore}.\n`,
     );
     return;
   }

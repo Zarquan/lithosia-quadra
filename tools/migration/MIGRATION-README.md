@@ -33,8 +33,19 @@ The script therefore rewrites the durable state directly, keeping the header
 Everything after the header frame is copied **byte-for-byte**; a backup of the
 whole sessions root plus the storage artifacts is taken first.
 
-Defaults: `<sessions>` = `/opt/dsh/sessions`, `<dsh-home>` = `/opt/dsh`,
-backups = `/opt/dsh/backups`.
+Defaults are expressed against the harness home, named by the `DSH_HOME`
+environment variable (which the harness falls back to `~/.dsh` when unset):
+
+| Location | Default |
+|---|---|
+| `<dsh-home>` | `$DSH_HOME` |
+| `<sessions>` | `<dsh-home>/sessions` (the shipped profile configures the sessions root as `dshHomePath('sessions')`) |
+| `<backup-root>` | `<dsh-home>/backups` |
+
+The script resolves `DSH_HOME` itself, with the same precedence as DSH
+(`$DSH_HOME`, else `~/.dsh`), so it needs no path flags on a host DSH already
+configures. Naming `--dsh-home` relocates the default sessions and backup roots
+beneath it unless those are named too.
 
 ## Preconditions
 
@@ -47,14 +58,17 @@ backups = `/opt/dsh/backups`.
 ## Runbook
 
 ```bash
+# Run from the repository root. The script reads the harness home from
+# `DSH_HOME` (falling back to `~/.dsh`), so no path flags are needed.
+
 # 1. Preview (safe while the GUI is running; writes nothing)
-node /Calycopis/migrate-sessions-to-top-level.mjs --dry-run
+node tools/migration/migrate-sessions-to-top-level.mjs --dry-run
 
 # 2. Stop the DSH host (the script prints its pid if you run step 3 too early)
 pkill -f 'dsh web'
 
 # 3. Apply (takes a backup automatically; asks for no confirmation with --yes)
-node /Calycopis/migrate-sessions-to-top-level.mjs --apply --yes
+node tools/migration/migrate-sessions-to-top-level.mjs --apply --yes
 
 # 4. Restart the host the same way it was started
 dsh web --no-open
@@ -72,7 +86,7 @@ under `Calycopis` (newest first).
 | `--apply --yes` | Perform the migration. |
 | `--restore <backup-dir>` | Undo a run from its backup. |
 | `--target <path>` | Target workspace (default `/Calycopis`). |
-| `--sessions-root`, `--dsh-home`, `--backup-root` | Override default locations. |
+| `--sessions-root`, `--dsh-home`, `--backup-root` | Override the `$DSH_HOME`-derived locations above. |
 | `--keep-projects` | Leave emptied sub-directory workspaces registered instead of removing them. |
 | `--force-running` | Proceed despite a detected DSH host (unsafe). |
 
@@ -82,7 +96,10 @@ Each run prints its backup directory. To undo:
 
 ```bash
 # stop the host first
-node /Calycopis/migrate-sessions-to-top-level.mjs --restore /opt/dsh/backups/session-rebase-<timestamp> --yes
+dsh_home="${DSH_HOME:-$HOME/.dsh}"
+node tools/migration/migrate-sessions-to-top-level.mjs \
+    --restore "$dsh_home/backups/session-rebase-<timestamp>" \
+    --yes
 # restart the host
 ```
 
