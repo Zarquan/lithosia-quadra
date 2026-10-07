@@ -1,3 +1,37 @@
+<!--
+  <meta:header>
+    <meta:licence>
+      Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+
+      This information is free software: you can redistribute it and/or modify
+      it under the terms of the GNU General Public License as published by
+      the Free Software Foundation, either version 3 of the License, or
+      (at your option) any later version.
+
+      This information is distributed in the hope that it will be useful,
+      but WITHOUT ANY WARRANTY; without even the implied warranty of
+      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+      GNU General Public License for more details.
+
+      You should have received a copy of the GNU General Public License
+      along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    </meta:licence>
+  </meta:header>
+
+  AIMetrics: [
+      {
+      "timestamp": "2026-10-07T03:37:40",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 100,
+        "units": "%"
+        }
+      }
+    ]
+-->
+
 # AGENTS.md
 
 Guidance for AI agents working in this repository. Humans should start with
@@ -114,16 +148,42 @@ Ad-hoc checks are done with `node -e` against the zstd logs (decode the first
 frame for the header, scan frames to compare bodies). Delete every scratch
 directory when finished — nothing here is gitignored.
 
+## Coding rules
+
+The rules in [`agents/rules/`](agents/rules/) are imported from the
+Calycopis-broker project and adapted for this one — each file records what was
+changed. They apply to every file an agent creates or modifies, and to every
+agent commit message.
+
+| Rule | Requirement |
+|---|---|
+| [`licence-header.mdc`](agents/rules/licence-header.mdc) | Every new source file starts with the GPL `<meta:header>` block, using the comment syntax for its language and the Wizzard Solutions Ltd copyright line. |
+| [`copyright-year.mdc`](agents/rules/copyright-year.mdc) | When a file carrying a `<meta:licence>` block is modified, bump its `Copyright (C) YYYY` to the current year. |
+| [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc) | Every created or modified file header carries an `AIMetrics` block, appended to rather than replacing existing entries, and every agent commit message ends with an `AIMetrics` block using `interval` in place of `timestamp`. |
+| [`unexpected-behaviour.mdc`](agents/rules/unexpected-behaviour.mdc) | Stop and ask before coding around unexpected behaviour from an API, service or component — including DSH's own on-disk behaviour. |
+
+The `name`, `version` and `model` values must describe the agent that actually
+did the work in the current session. For DSH that is `@deepseek-ai/dsh`, the
+installed version (`dsh --version`), and the `model` from the
+`agent-default-model` entry of the active profile
+(`$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
+
+`agents/rules/*.mdc` are exempt from the header rules, matching the form they
+have upstream.
+
 ## Conventions
 
 - **Commits**: past-tense subject; body separated by a blank line explaining
   what changed and why. Keep each change focused, and split unrelated work into
-  separate commits.
+  separate commits. Every agent commit also ends with an `AIMetrics` block — see
+  [Coding rules](#coding-rules).
 - **DCO sign-off**: `CONTRIBUTING.md` asks every commit to carry
   `Signed-off-by:` (`git commit -s`). Note that the history so far, including
   recent commits, does **not** carry the trailer.
-- **Licence**: GPL-3.0-or-later (see `LICENSE`). New `notes/*.txt` files must
-  keep the leading `<meta:header>` licence block and the `#zrq-notes-*` tags.
+- **Licence**: GPL-3.0-or-later (see `LICENSE`), applied through the
+  `<meta:header>` block required by [Coding rules](#coding-rules). New
+  `notes/*.txt` files keep the leading `<meta:header>` block and the
+  `#zrq-notes-*` tags.
 - **Notes**: named `YYYYMMDD-NN-topic.txt`, one topic per file.
 - **Style**: no new dependencies unless there is no alternative; comment the
   *why* (particularly where behaviour mirrors a DSH internal), and prefer a

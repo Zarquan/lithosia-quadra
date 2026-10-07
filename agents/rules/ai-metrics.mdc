@@ -1,0 +1,141 @@
+---
+description: Update AIMetrics block in file headers for all modified or created files
+alwaysApply: true
+---
+
+Every file you create or modify must have an AIMetrics block in its file header comment.
+
+- If a file already has an AIMetrics block, update it by adding a new entry to the array (do not remove existing entries).
+- If a file has no AIMetrics block, add one.
+- For new files created entirely by the agent, set contribution value to 100.
+- For modified files, estimate the percentage of lines changed and use that as the contribution value.
+
+Each entry records one agent/model contribution to the file:
+
+- `timestamp` — the date and time of the modification, ISO 8601 format (YYYY-MM-DDThh:mm:ss).
+- `name` — the name of the agent or tool that made the modification. This must identify the
+  agent running the current session (e.g. the harness package name, such as `@deepseek-ai/dsh`).
+  Do NOT copy the values from the examples below; they are illustrative only.
+- `version` — the version of that agent/tool, taken from the current session (e.g. `0.2.0-rc.2`).
+- `model` — the identifier of the model powering the agent in the current session
+  (e.g. `deepseek-flash`).
+- `contribution.value` — the percentage of the file's lines changed by this contribution
+  (100 for a new file).
+
+The `name`, `version`, and `model` fields must always describe the agent and model that
+actually performed the modification. In this project that is normally `@deepseek-ai/dsh`,
+the version reported by `dsh --version`, and the `model` from the `agent-default-model`
+entry of the active profile (see `$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
+
+The format for JavaScript and Node files (`.mjs`, `.js`, `.cjs`), in `//` comments, is:
+
+```
+// AIMetrics: [
+//     {
+//     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+//     "name": "<agent/tool name from the current session>",
+//     "version": "<agent/tool version from the current session>",
+//     "model": "<model identifier from the current session>",
+//     "contribution": {
+//       "value": <percentage>,
+//       "units": "%"
+//       }
+//     }
+//   ]
+```
+
+The format for Python, YAML, shell, and other `#`-commented files is:
+
+```
+# AIMetrics: [
+#     {
+#     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+#     "name": "<agent/tool name from the current session>",
+#     "version": "<agent/tool version from the current session>",
+#     "model": "<model identifier from the current session>",
+#     "contribution": {
+#       "value": <percentage>,
+#       "units": "%"
+#       }
+#     }
+#   ]
+```
+
+The format for Java files (inside the `/* */` header comment) is:
+
+```
+ * AIMetrics: [
+ *     {
+ *     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+ *     "name": "<agent/tool name from the current session>",
+ *     "version": "<agent/tool version from the current session>",
+ *     "model": "<model identifier from the current session>",
+ *     "contribution": {
+ *       "value": <percentage>,
+ *       "units": "%"
+ *       }
+ *     }
+ *   ]
+```
+
+The format for Markdown files and XML files (inside `<!-- -->` comments) is:
+
+```
+  AIMetrics: [
+      {
+      "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+      "name": "<agent/tool name from the current session>",
+      "version": "<agent/tool version from the current session>",
+      "model": "<model identifier from the current session>",
+      "contribution": {
+        "value": <percentage>,
+        "units": "%"
+        }
+      }
+    ]
+```
+
+Place the block after the `</meta:header>` tag and before the closing comment delimiter.
+
+For files with no AIMetrics or AI contribution, the block should be:
+
+```
+ * AIMetrics: []
+```
+
+(using the appropriate comment prefix for the file type).
+
+> **Imported from the Calycopis-broker project**
+> (`/Calycopis/Calycopis-broker/agents/rules/ai-metrics.mdc`) and adapted for this
+> project: the JavaScript and Markdown formats have been added, because this
+> project is mostly `.mjs` and `.md`. As upstream, `agents/rules/*.mdc` are
+> exempt.
+
+### Git commit messages
+
+Every git commit message created by an agent must end with an AIMetrics block.
+
+- The `name`, `version`, and `model` fields are the same as the values used for a file header
+  (see above): they must always describe the agent and model that actually performed the work.
+- The `contribution.value` is an estimate of how much of the changes in the commit were
+  contributed by the agent. If all of the changes were contributed by the agent, set the value
+  to `100`.
+- A commit message block uses `interval` instead of `timestamp`: an ISO 8601 interval covering
+  the current session (e.g. `2026-02-14T15:30:00/2026-03-14T05:00:00`).
+
+The format for an AIMetrics block at the end of a commit message is:
+
+```
+AIMetrics: [
+    {
+    "interval": "<ISO 8601 interval covering the current session, e.g. 2026-02-14T15:30:00/2026-03-14T05:00:00>",
+    "name": "<agent/tool name from the current session>",
+    "version": "<agent/tool version from the current session>",
+    "model": "<model identifier from the current session>",
+    "contribution": {
+      "value": <percentage>,
+      "units": "%"
+      }
+    }
+  ]
+```
