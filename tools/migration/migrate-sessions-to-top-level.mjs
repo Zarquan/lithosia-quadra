@@ -65,6 +65,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -478,7 +479,27 @@ function rewriteWorkspaceRegistry({
   }
   const targetId = Object.keys(workspaces).find((id) => workspaces[id].path === target);
   if (targetId === undefined) {
-    throw new Error(`${workspaceJsonPath}: no workspace record for '${target}'`);
+    // DSH stores canonical workspace paths, so a miss here can mean the
+    // registry holds a non-canonical spelling. Point that out rather than
+    // leaving the caller to guess why an existing directory is unregistered.
+    const aliases = Object.values(workspaces)
+      .map((record) => record.path)
+      .filter((path) => {
+        try {
+          return realpathSync(path) === target;
+        } catch {
+          return false;
+        }
+      });
+    throw new Error(
+      `${workspaceJsonPath}: no workspace record for '${target}'` +
+        (aliases.length > 0
+          ? `\n  note: record path(s) ${aliases
+              .map((path) => `'${path}'`)
+              .join(', ')} resolve to the target; DSH stores canonical workspace paths, ` +
+            'so repair that record before migrating'
+          : ''),
+    );
   }
 
   const moved = new Set(migratedIds);
@@ -717,6 +738,28 @@ function assertRealDirectory(path, label) {
   if (!statSync(path).isDirectory()) throw new Error(`${label} is not a directory: ${path}`);
 }
 
+/**
+ * Canonicalize the target the way DSH stores a workspace path
+ * (`realpathNormalize` in `@deepseek-ai/dsh-workspace`): trailing slashes, `..`
+ * segments and symlinks all resolved. The header cwd written here is later
+ * realpath'd by DSH and compared against the registry record, and the registry
+ * lookup in this script is a literal string compare, so both sides must be
+ * canonical.
+ *
+ * Only the target needs this. DSH resolves its own home from DSH_HOME with
+ * `resolve`, not `realpath`, so the sessions root and storages stay as given.
+ *
+ * @param {string} path - target workspace directory, already known to exist.
+ * @returns {string} the canonical absolute path.
+ */
+function canonicalizeTarget(path) {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    throw new Error(`cannot canonicalize target workspace '${path}': ${error.message}`);
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * CLI
  * ------------------------------------------------------------------ */
@@ -901,6 +944,11 @@ function main() {
   assertRealDirectory(options.target, 'target workspace');
   assertRealDirectory(options.sessionsRoot, 'sessions root');
 
+  // The registry stores canonical paths, so migrate toward the canonical
+  // spelling even when the caller named a symlink, a trailing slash or `..`.
+  const typedTarget = options.target;
+  options.target = canonicalizeTarget(options.target);
+
   const workspaceJsonPath = join(options.dshHome, 'storages', 'workspace.json');
   if (!existsSync(workspaceJsonPath)) throw new Error(`workspace registry not found: ${workspaceJsonPath}`);
 
@@ -922,7 +970,11 @@ function main() {
     return;
   }
 
-  process.stdout.write(`Target workspace : ${options.target}\n`);
+  process.stdout.write(
+    `Target workspace : ${options.target}${
+      options.target === typedTarget ? '' : ` (canonicalized from '${typedTarget}')`
+    }\n`,
+  );
   process.stdout.write(`Sessions root    : ${options.sessionsRoot}\n`);
   if (options.only.length > 0) {
     process.stdout.write(`Only             : ${options.only.join(', ')}\n`);
