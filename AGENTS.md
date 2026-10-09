@@ -138,6 +138,16 @@
         "value": 100,
         "units": "%"
         }
+      },
+      {
+      "interval": "2026-10-09T16:50:00/2026-10-09T16:52:00",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 100,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -274,7 +284,7 @@ granted separately and neither covers the other:
 | Secret file | Organisation | State |
 |---|---|---|
 | `/run/secrets/dsh-github-token-zarquan` | `Zarquan` | reads and writes, including the workflow permission |
-| `/run/secrets/dsh-github-token-uksrc` | `uksrc` | reads only, pending the owners granting permission |
+| `/run/secrets/dsh-github-token-uksrc` | `uksrc` | reads only — a push is refused by the token's own grant, not only by a missing org permission |
 
 The choice between them is **explicit** — it is never inferred from `--repo` or
 from the remote URL, because a wrong guess would be silent and the override is
@@ -385,6 +395,15 @@ Caveats worth knowing before blaming the mount:
   permissions every read succeeds and the write is refused with
   `remote: Permission to … denied` (HTTP 403), which looks like a credential
   failure but is not.
+- **The `permissions` object from the REST API describes the account, not the
+  token.** `GET /repos/{owner}/{repo}` reports what the authenticated *user* can
+  do there, so it answers `"push": true` even for a token that carries no write
+  permission at all; that token is still refused with a 403. Verified on
+  2026-10-09: the uksrc token reported `push: true` on `uksrc/Calycopis-broker`
+  and then failed a `--dry-run` push, and it cannot push to this repository
+  either, where the account is an admin. Read the token's grants from its
+  settings, or test with `git push --dry-run`, but never infer them from this
+  field.
 - Editing an existing token's permissions needs no remount — the value is
   unchanged, so the container's copy stays valid. **Regenerating** the token does
   change the value: update the podman secret and recreate the container. Never
