@@ -1,0 +1,200 @@
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+#zrq-notes-time
+#zrq-notes-indent
+#zrq-notes-crypto
+#zrq-notes-ansible
+#zrq-notes-osformat
+#
+# AIMetrics: [
+#     {
+#     "timestamp": "2026-10-09T10:05:00",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 100,
+#       "units": "%"
+#       }
+#     }
+#   ]
+#
+
+    Target:
+
+        Give the harness home its own volume mount, separate from the project
+        source mount, so a container can have either one without the other.
+
+    Result:
+
+        Work in progress ...
+
+# -----------------------------------------------------
+# What was wrong.
+#[root@lithosia-dsh-pod]
+
+    DSH_HOME was set to /Zarquan/lithosia-quadra/dsh, a path *inside* the
+    source mount. The state was therefore reachable only as a subdirectory of
+    the project source, a container had to mount the whole source tree to get
+    its own configuration, and the source mount had to be read-write for the
+    harness to persist anything. One mount was doing two jobs, and the harness
+    home could not be used by a container that did not want this project's
+    source.
+
+    DSH_HOME now names the harness home at a fixed container path, /opt/dsh,
+    with its own --volume. The host state stays where it was, at
+    ${LITHOSIA_CODE}/dsh (gitignored), so nothing had to be moved and no
+    existing profile or session was touched.
+
+# -----------------------------------------------------
+# The two mounts.
+#[root@lithosia-dsh-pod]
+
+        LITHOSIA_CODE   the project source, /Zarquan/lithosia-quadra
+        DSH_HOME        the harness home, /opt/dsh, from ${LITHOSIA_CODE}/dsh
+
+    Three launch variants, all documented in README.md:
+
+        both            source and harness home, for an agent that edits this
+                        project
+        source only     to read or edit with no harness
+        harness only    the harness home alone, for agents working on other
+                        mounted projects
+
+    The last one is the point of the change: the harness no longer needs this
+    project's source in order to run.
+
+# -----------------------------------------------------
+# Files changed.
+#[root@lithosia-dsh-pod]
+
+        README.md       a "Running the container" section: the two mounts, the
+                        three variants, and the caveats
+        AGENTS.md       the Environment bullet now says DSH_HOME=/opt/dsh and
+                        points at the README section
+        .gitignore      "dsh" anchored to "/dsh", so only the root state
+                        directory is ignored rather than any future path named
+                        dsh
+        notes/...       this note
+
+    Not changed, deliberately:
+
+        docker/Dockerfile
+                        VOLUME /root/.dsh is legacy and unused whenever
+                        DSH_HOME is set. Removing it would force an image
+                        rebuild for a cosmetic gain, so it is documented as
+                        legacy instead.
+
+        notes/20261007-01-launch.txt
+                        a record of what was run on 2026-10-07. Notes are
+                        history; this note supersedes it.
+
+# -----------------------------------------------------
+# Verification.
+#[root@lithosia-dsh-pod]
+
+    Run on 2026-10-09, in the DSH container, after the launch command was
+    changed to the new pattern and the container restarted.
+
+    Result: the harness home is mounted at /opt/dsh, it is the live state
+    from the host, the harness writes into it, and nothing was lost across
+    the restart.
+
+        DSH_HOME                     /opt/dsh
+        DSH_PROFILE_DIR              /opt/dsh/profiles/web
+        mount                        /Zarquan/Projects/Zarquan/lithosia-quadra/dsh
+                                     -> /opt/dsh   rw,relatime
+        same host directory?         sessions/ is dev:ino 43:5585413 through
+                                     *both* /opt/dsh and ${LITHOSIA_CODE}/dsh
+        top level                    .anonymous-user-id .credentials.yaml
+                                     .pnpm-store backups pnpm profiles sessions
+                                     settings.yaml.imported storages
+        profiles                     node_modules web
+        session dirs / storage json  2 / 20
+        .credentials.yaml            296 bytes, mtime 2026-09-10 16:14:23
+        profiles/web/cordis.patch.yml
+                                     sha256 d88739fd9f6d8f79...
+        this session's log           present, 1.89 MB, mtime equal to `date` to
+                                     the second while the session ran
+        profiles/web/cordis.yml      rewritten at boot, 11:14:30
+
+    The two that matter:
+
+        The inode check proves both paths are one host directory, so the state
+        is not a copy and nothing was migrated.
+
+        The session log mtime matching the current time, and the log growing,
+        proves the harness is writing into the mounted home. That is the
+        property the whole arrangement depends on.
+
+    The check that fails, and why it is not a fault:
+
+        touch /opt/dsh/.sandbox-probe
+        touch: cannot touch '/opt/dsh/.sandbox-probe': Permission denied
+
+    That is the DSH file sandbox, not the mount. Under the `workspace-write`
+    policy the writable roots are the session workspace (/Calycopis here) plus
+    /tmp and the per-user temporary directory, and nothing else:
+
+        writableRoots(policy) = [ policy.workspaceRoot, "/tmp", tmpdir() ]
+
+        @deepseek-ai/dsh-sandbox, lib/index.js
+
+    So an agent whose workspace is a project cannot write DSH_HOME however it is
+    mounted, and a denial there says nothing about the volume. The harness
+    itself is not confined this way, which is why it can persist sessions while
+    the agent's own shell cannot write the same directory. Do not widen the
+    workspace to include DSH_HOME to make such a test pass; if a direct write is
+    ever needed, use the bash tool's sandbox_permissions escalation and let the
+    user approve that one command.
+
+    Still to check, on the host:
+
+        harness only variant    the DSH_HOME mount with no LITHOSIA_CODE mount.
+                                The mechanism is proven, the reduced variant is
+                                not.
+        source only variant     the LITHOSIA_CODE mount with no DSH_HOME.
+        a fresh home            init-dsh.sh against an empty DSH_HOME, which is
+                                what a new user does first.
+
+    Do not test any of these by launching containers from inside the DSH
+    container. Doing that through the mounted Podman socket destabilised the
+    session container twice on 2026-10-09 and it needed restarting both times.
+# -----------------------------------------------------
+# Caveats worth knowing.
+#[root@lithosia-dsh-pod]
+
+    a. The pnpm workspace state file under profiles/web/node_modules records
+       the absolute profile path. init-dsh.sh rewrites it; if a plugin install
+       misbehaves after the move, run /usr/local/bin/init-dsh.sh again.
+
+    b. Historical manifests under dsh/backups/ name the old path. They are
+       records, not configuration.
+
+    c. One harness home, one running harness. Two containers sharing a home
+       will corrupt session state; the separate mount makes per-agent homes
+       easy (dsh-<name>).
+
+    d. /opt/dsh currently holds an empty pnpm/store directory in the image.
+       The mount shadows it, which is harmless.
+
+# -----------------------------------------------------
+# -----------------------------------------------------
