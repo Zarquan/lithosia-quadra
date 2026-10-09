@@ -39,17 +39,25 @@
 
 
 # -----------------------------------------------------
-# Create a podman secret for our GITHUB_TOKEN.
+# Create a podman secrets for our GITHUB_TOKENs.
 #[user@desktop]
 
-    ~/bin/getsecret 'github.dsh-token' \
+    ~/bin/getsecret 'github.dsh-token-uksrc' \
     | podman secret create \
         --replace \
-        'dsh-github-token' \
+        'dsh-github-token-uksrc' \
         -
 
+    ~/bin/getsecret 'github.dsh-token-zarquan' \
+    | podman secret create \
+        --replace \
+        'dsh-github-token-zarquan' \
+        -
+
+
 --START--
-def3df404b9143f8df18c457e
+b4447fa6d9d4fb82f4a83b210
+3a996354dc3450cb9c582c70c
 --END--
 
 
@@ -81,13 +89,16 @@ def3df404b9143f8df18c457e
         --volume "${HOST_CONTAINER_PATH}:/run/podman/podman.sock:rw,Z" \
         --env    "CALYCOPIS_CODE=/Calycopis/Calycopis-broker" \
         --volume "${CALYCOPIS_CODE:?}:/Calycopis/Calycopis-broker:rw,Z" \
+        --env    "CALYCOPIS_SCRATCH=/Calycopis/agents/scratch" \
+        --volume "${CALYCOPIS_SCRATCH:?}:/Calycopis/agents/scratch:rw,Z" \
         --env    "TREBULA_CODE=/Calycopis/Calycopis-openapi" \
         --volume "${TREBULA_CODE:?}:/Calycopis/Calycopis-openapi:rw,Z" \
         --env    "LITHOSIA_CODE=/Zarquan/lithosia-quadra" \
         --volume "${LITHOSIA_CODE:?}:/Zarquan/lithosia-quadra:rw,Z" \
         --env    "DSH_HOME=/opt/dsh" \
         --volume "${LITHOSIA_CODE:?}/dsh:/opt/dsh:rw,Z" \
-        --secret 'dsh-github-token' \
+        --secret 'dsh-github-token-uksrc' \
+        --secret 'dsh-github-token-zarquan' \
         localhost/zarquan/lithosia-quadra:latest \
             bash
 

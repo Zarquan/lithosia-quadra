@@ -128,6 +128,16 @@
         "value": 25,
         "units": "%"
         }
+      },
+      {
+      "interval": "2026-10-09T16:37:00/2026-10-09T16:39:00",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 100,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -219,13 +229,14 @@ Practical consequences here:
   the scrub removes environment variables, so a file is untouched:
 
   ```
-  --secret dsh-github-token        # -> /run/secrets/dsh-github-token
+  --secret dsh-github-token-zarquan    # -> /run/secrets/dsh-github-token-zarquan
+  --secret dsh-github-token-uksrc      # -> /run/secrets/dsh-github-token-uksrc
   ```
 
   [`bin/gh`](bin/gh) reads that file, so `bin/gh issue list …` works with no
   environment variable at all. Anything else can do the same with
-  `$(cat /run/secrets/dsh-github-token)`: assigning it inline works because the
-  scrub has already run by the time the command line is evaluated.
+  `$(cat /run/secrets/dsh-github-token-zarquan)`: assigning it inline works
+  because the scrub has already run by the time the command line is evaluated.
 - Renaming a variable to dodge the pattern — `GITHUB_AUTH` and `GH_PAT` both
   survive, verified — also works, but it deliberately exempts one secret from
   the control, the name looks arbitrary wherever it is configured, and a future
@@ -257,6 +268,32 @@ Until one is picked, authenticate the *individual command* with the mounted
 secret rather than editing the remote, so `.git/config` and the human's own
 clone stay untouched.
 
+There are **two** tokens, one per organisation, because the permissions are
+granted separately and neither covers the other:
+
+| Secret file | Organisation | State |
+|---|---|---|
+| `/run/secrets/dsh-github-token-zarquan` | `Zarquan` | reads and writes, including the workflow permission |
+| `/run/secrets/dsh-github-token-uksrc` | `uksrc` | reads only, pending the owners granting permission |
+
+The choice between them is **explicit** — it is never inferred from `--repo` or
+from the remote URL, because a wrong guess would be silent and the override is
+one word. [`bin/gh`](bin/gh) defaults to the Zarquan token, which is the one
+that works today; point `GH_SECRET_FILE` at the other for a uksrc repository:
+
+```bash
+GH_SECRET_FILE=/run/secrets/dsh-github-token-uksrc bin/gh pr create ...
+```
+
+**The override must be assigned inline on the same command, not `export`ed.**
+`GH_SECRET_FILE` matches the scrub pattern, so an exported variable never
+reaches `bin/gh`; it silently falls back to the Zarquan default instead. The
+inline form works because the scrub has already run by the time the command line
+is evaluated.
+
+The askpass helper below reads the Zarquan token; change the path in the `case`
+arm if a push targets a uksrc repository.
+
 The token reaches the shell as a file, because the scrub removes
 credential-shaped environment variables (see above). `git` cannot read a file,
 so write a short askpass helper first. It is read by git and never printed:
@@ -270,7 +307,7 @@ cat > "$askpass" <<'ASKPASS'
 #!/usr/bin/env bash
 case "${1:-}" in
     *[Uu]sername*) printf '%s' 'x-access-token' ;;
-    *)             cat /run/secrets/dsh-github-token ;;
+    *)             cat /run/secrets/dsh-github-token-zarquan ;;
 esac
 ASKPASS
 chmod 700 "$askpass"
@@ -321,12 +358,21 @@ git ls-remote https://github.com/Zarquan/lithosia-quadra.git refs/heads/main
 ```
 
 Opening the pull request is simpler than the transport, because `bin/gh` already
-reads the same secret:
+reads the same secret. This uses the default, Zarquan, token:
 
 ```bash
 bin/gh pr create --repo Zarquan/lithosia-quadra \
     --base main --head <branch> \
     --title "<title>" --body-file <file>
+```
+
+For a uksrc repository, name that token explicitly:
+
+```bash
+GH_SECRET_FILE=/run/secrets/dsh-github-token-uksrc \
+    bin/gh pr create --repo uksrc/Calycopis-broker \
+        --base main --head <branch> \
+        --title "<title>" --body-file <file>
 ```
 
 Per [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc), an agent-authored PR body
@@ -348,7 +394,7 @@ Caveats worth knowing before blaming the mount:
   authenticate git, verified — but it reads the token from `gh`'s own state,
   which is empty here: `gh auth status` without `bin/gh` reports "not logged into
   any GitHub hosts". It works only where something supplies `GH_TOKEN`, such as
-  `GH_TOKEN="$(cat /run/secrets/dsh-github-token)" git -c
+  `GH_TOKEN="$(cat /run/secrets/dsh-github-token-zarquan)" git -c
   credential.helper='!gh auth git-credential' …`. That plumbing is no shorter
   than the askpass helper above, which is why a persistent credential helper is a
   long-term decision rather than part of this workaround.

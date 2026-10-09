@@ -29,6 +29,16 @@
 #       "value": 100,
 #       "units": "%"
 #       }
+#     },
+#     {
+#     "interval": "2026-10-09T16:37:00/2026-10-09T16:39:00",
+#     "name": "@deepseek-ai/dsh",
+#     "version": "0.2.0-rc.2",
+#     "model": "deepseek-flash",
+#     "contribution": {
+#       "value": 100,
+#       "units": "%"
+#       }
 #     }
 #   ]
 #
@@ -44,12 +54,26 @@
 # writes one at /run/secrets/<name> - and is assigned here, inside the shell,
 # after the scrub has already run.
 #
-# Override the location with GH_SECRET_FILE, or set GH_TOKEN yourself and it is
-# passed through untouched. See AGENTS.md, "Credential scrubbing".
+# There is one secret per organisation, because the permissions are separate:
+#
+#   /run/secrets/dsh-github-token-zarquan    the Zarquan repositories
+#   /run/secrets/dsh-github-token-uksrc      the uksrc repositories
+#
+# The default is chosen explicitly rather than inferred from --repo: a wrong
+# guess would be silent, and the override is one word. Point GH_SECRET_FILE at
+# the other token for the other organisation:
+#
+#   GH_SECRET_FILE=/run/secrets/dsh-github-token-uksrc bin/gh pr create ...
+#
+# Set GH_TOKEN yourself and it is passed through untouched, and GH_SECRET_FILE
+# overrides the location. See AGENTS.md, "Git remotes and the GitHub token".
 
 set -euo pipefail
 
-secret=${GH_SECRET_FILE:-/run/secrets/dsh-github-token}
+default_secret=/run/secrets/dsh-github-token-zarquan
+uksrc_secret=/run/secrets/dsh-github-token-uksrc
+
+secret=${GH_SECRET_FILE:-$default_secret}
 
 if ! command -v gh >/dev/null 2>&1; then
     echo "gh: the GitHub CLI is not installed in this container" >&2
@@ -63,7 +87,10 @@ fi
 
 if [ ! -r "$secret" ]; then
     echo "gh: no token to use; '${secret}' is missing or unreadable" >&2
-    echo "gh: mount a secret there, set GH_SECRET_FILE, or set GH_TOKEN" >&2
+    echo "gh: the tokens are mounted at:" >&2
+    echo "gh:   ${default_secret}  (Zarquan repositories, the default)" >&2
+    echo "gh:   ${uksrc_secret}  (uksrc repositories)" >&2
+    echo "gh: point GH_SECRET_FILE at one of them, or set GH_TOKEN" >&2
     exit 2
 fi
 
