@@ -1,0 +1,169 @@
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+#zrq-notes-time
+#zrq-notes-indent
+#zrq-notes-crypto
+#zrq-notes-ansible
+#zrq-notes-osformat
+#
+# AIMetrics: []
+#
+
+    Target:
+
+        Work out how an agent session in the DSH container can push to GitHub,
+        given that the container has no SSH key and `origin` is an SSH remote.
+
+    Result:
+
+        Work in progress - a temporary workaround is in use and documented in
+        AGENTS.md. The long-term arrangement is not decided yet.
+
+# -----------------------------------------------------
+# The symptom.
+#[root@lithosia-dsh-pod]
+
+    The clone's `origin` is an SSH URL:
+
+        origin  git@github.com:Zarquan/lithosia-quadra.git (fetch)
+        origin  git@github.com:Zarquan/lithosia-quadra.git (push)
+
+    The container holds no SSH key, so every `origin`-based operation fails the
+    same way. Verified on 2026-10-09:
+
+        git fetch origin          Host key verification failed
+        git push  origin HEAD     Host key verification failed
+        git remote prune origin   Host key verification failed
+
+    There is also no global git config (`~/.gitconfig` does not exist), no
+    `~/.config/gh`, and `~/.ssh` is empty. The alert is accurate: the host key
+    cannot be verified because there is nothing to verify it against and no key
+    to offer.
+
+    Note that the failure is not a credential failure and not a mount problem.
+    The token mounted for the API is fine - [`bin/gh`](../../bin/gh) uses it
+    successfully in the same session. What is missing is a *transport*.
+
+# -----------------------------------------------------
+# The temporary workaround.
+#[root@lithosia-dsh-pod]
+
+    Point the individual command at an explicit HTTPS URL and authenticate it
+    with the mounted secret, through a short-lived askpass helper. The full
+    recipe, with the caveats, is in AGENTS.md under
+    "Git remotes and the GitHub token".
+
+        URL=https://github.com/Zarquan/lithosia-quadra.git
+
+        GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
+            git -c credential.helper= push "$URL" \
+                HEAD:refs/heads/<branch>
+
+    Why this shape:
+
+        Nothing is configured      `.git/config` is left alone, so the human's
+                                   own clone and workflow are unaffected, and
+                                   there is nothing to unwind when the
+                                   long-term decision is made.
+
+        The credential is a file   DSH scrubs credential-shaped environment
+                                   variables, so the secret is read from
+                                   /run/secrets/dsh-github-token inside the
+                                   helper, never placed on a command line.
+
+        The helper is removed      A `trap` deletes it on exit, so it does not
+                                   survive the command even if git fails.
+
+    Both PR #9 and PR #10 were pushed this way on 2026-10-09, so the mechanism
+    is proven, not theoretical.
+
+# -----------------------------------------------------
+# The long-term options.
+#[root@lithosia-dsh-pod]
+
+    None of these is chosen. They are recorded here so the next session does
+    not have to rediscover the tradeoffs.
+
+    a. An SSH key in the container.
+
+           Matches `origin` as it already is, needs no config change, and gives
+           the human's own workflow and the agent's the same shape.
+
+           But it puts a long-lived private key inside the agent container. The
+           mounted podman socket makes anything in that container reachable, so
+           this is a stronger exposure than a repository-scoped token. The key
+           would also need a passphrase-free form, or an agent to unlock it.
+
+    b. Change `origin` to an HTTPS URL.
+
+           No key material in the image and no askpass plumbing. A plain
+           `git push` then needs a credential helper instead.
+
+           But it changes the remote for every user of the clone, and it makes
+           the token the everyday transport rather than a fallback. On a host
+           with working SSH that is a downgrade in convenience, and it
+           contradicts a clone made with `git clone git@github.com:...`.
+
+    c. A named HTTPS remote plus `gh auth git-credential`.
+
+           No key material, and the tooling is already installed. The helper
+           does work: `gh auth git-credential` returned credentials, and both an
+           `ls-remote` and a `push --dry-run` authenticated through it on
+           2026-10-09.
+
+           But it reads the token from `gh`'s own state, which is empty here -
+           bare `gh auth status` reports "not logged into any GitHub hosts"
+           because there is no config file and the scrub removes `GH_TOKEN`. It
+           works only when something supplies the token, such as
+           `GH_TOKEN="$(cat /run/secrets/dsh-github-token)"`, which is no
+           shorter than the askpass helper. A genuinely bare `git push` would
+           need a persistent helper or a stored token, and that is the decision
+           this option defers rather than makes.
+
+    A fourth shape was considered and rejected as a workaround: `git remote add
+    origin-http <https-url>`. It is only addressing - authentication is still
+    needed - and it creates a second `refs/remotes/origin-http/*` namespace that
+    can drift from `refs/remotes/origin/*` in a container that is recreated. It
+    remains a two-command convenience, documented in AGENTS.md, not a solution.
+
+# -----------------------------------------------------
+# Still to check.
+#[root@lithosia-dsh-pod]
+
+    a. Pushing with the token absent, to confirm the failure is loud and
+       recognisable rather than a silent fallback to some other credential.
+
+    b. Whether `git remote prune` has any HTTPS form worth documenting. It
+       currently needs the host. A stale remote-tracking ref that it would have
+       removed can be dropped offline instead:
+
+           git update-ref -d refs/remotes/origin/<branch>
+
+       but that was written here and executed once, on 2026-10-09, so it is a
+       single observation rather than a rehearsed procedure.
+
+    c. Whether an expired or regenerated token fails in a way that reads as
+       "permission denied" rather than "authentication failed". The
+       read-succeeds-write-fails signature recorded in AGENTS.md is the case
+       seen so far, and it looks like a credential problem but is not.
+
+# -----------------------------------------------------
+# -----------------------------------------------------
