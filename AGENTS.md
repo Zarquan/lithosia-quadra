@@ -108,6 +108,16 @@
         "value": 3,
         "units": "%"
         }
+      },
+      {
+      "timestamp": "2026-10-09T10:05:00",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 2,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -157,8 +167,9 @@ after the moth *Lithosia quadra*.
 
 ## Environment
 
-- `DSH_HOME=/Zarquan/lithosia-quadra/dsh`; projects are mounted at `/Calycopis/…`
-  and `/Zarquan/lithosia-quadra`.
+- `DSH_HOME=/opt/dsh` is the harness home, mounted separately from the source
+  (see [Running the container](README.md#running-the-container)); projects are
+  mounted at `/Calycopis/…` and `/Zarquan/lithosia-quadra`.
 - DSH is installed globally: `@deepseek-ai/dsh` **0.2.0-rc.2** under
   `/usr/local/lib/node_modules/@deepseek-ai/dsh`. Reading its `lib/` is the
   fastest way to confirm how DSH behaves — the specs the migration tool pins are
