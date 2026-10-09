@@ -1,0 +1,136 @@
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this software. If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+#zrq-notes-time
+#zrq-notes-indent
+#zrq-notes-crypto
+#zrq-notes-ansible
+#zrq-notes-osformat
+#
+# AIMetrics: []
+#
+
+    Target:
+
+        Notes on copyright.
+
+    Result:
+
+        Work in progress ...
+
+# -----------------------------------------------------
+
+    University of Manchester policy on IP.
+    https://documents.manchester.ac.uk/display.aspx?DocID=24420
+
+    Debatable whether the IP on this project is owned by the university.
+    The university would probably claim it is.
+
+# -----------------------------------------------------
+
+    Is the output of the generative AI system protected by intellectual property rights?
+    https://www.nortonrosefulbright.com/en-gb/knowledge/publications/f237e6c7/is-the-output-of-the-generative-ai-system-protected-by-intellectual-property-rights
+
+    United States (USCO Rules)
+    https://pec.ac.uk/blog_entries/copyright-protection-in-ai-generated-works/
+
+        No Human Authorship = No Copyright:
+        The U.S. Copyright Office requires a human author for a work to qualify
+        for copyright protection. Software generated entirely or predominantly
+        by AI without substantial human creativity is placed into the public
+        domain (meaning anyone can use, copy, or modify it).
+
+        Human-Assisted Code:
+        If a human programmer writes architectural designs, edits, refactors,
+        heavily structures, or creatively combines AI-generated snippets, the
+        human-authored portions can be copyrighted, while the raw AI-generated
+        blocks remain unprotected.
+
+        Prompts Alone Are Insufficient: Simply writing a natural-language prompt
+        or "vibe coding" an entire application does not grant copyright over the
+        resulting code.
+
+
+    United Kingdom (CDPA 1988 Rules)
+    https://www.farrer.co.uk/news-and-insights/protecting-code-and-creativity-software-ip-rights-and-ai-generated-code/
+
+        Computer-Generated Works (Section 9(3)): Unlike the US, the UK Copyright,
+        Designs and Patents Act 1988 explicitly recognizes computer-generated works
+        (CGWs) that have no traditional human author.
+
+        Who Owns It: Authorship and ownership go to "the person by whom the arrangements
+        necessary for the creation of the work are undertaken" (often the person or company
+        that ran/directed the AI system).
+
+        gov.uk Copyright and AI: Consultation
+        https://www.gov.uk/government/consultations/copyright-and-artificial-intelligence/copyright-and-artificial-intelligence
+
+# -----------------------------------------------------
+
+    GitHub on no licence
+    https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository#choosing-the-right-license
+
+        You're under no obligation to choose a license. However, without a license,
+        the default copyright laws apply, meaning that you retain all rights to your
+        source code and no one may reproduce, distribute, or create derivative works
+        from your work.
+
+    Creative Commons CC0 1.0 Universal
+    https://creativecommons.org/publicdomain/zero/1.0/
+    https://creativecommons.org/publicdomain/zero/1.0/legalcode.en
+
+
+    https://choosealicense.com/
+    https://choosealicense.com/no-permission/
+
+    The Unlicense
+    https://choosealicense.com/licenses/unlicense/
+
+# -----------------------------------------------------
+
+    This project experiments with applying the DCO rules to git commits.
+    Naming the AI agent as the author and the human developer as the comitter.
+
+    What happens when we have agents or groups fo agents working together
+    creating and comitting whole blocks of code without human oversight.
+
+    Public Domain Is Not Open Source
+    https://opensource.org/blog/public-domain-is-not-open-source
+    "an open source user or developer cannot safely include public domain source code in a project"
+
+    Does that mean we need to have an 'AI generated licence' for work
+    developed using AI in the US ?
+
+    "This license certifies that this work was generated by an AI agent
+    in the USA without substantial human creativity and so is
+    considered by US law to be in the public domain, meaning anyone
+    can use, copy, or modify it without restriction."
+
+    Possibly borrow the text from the Unlicense ?
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,141 @@
+#
+# <meta:header>
+#   <meta:licence>
+#     Copyright (C) 2026 by Wizzard Solutions Ltd, wizzard@metagrid.co.uk
+#
+#     This information is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+#
+#     This information is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+#
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   </meta:licence>
+# </meta:header>
+#
+#zrq-notes-time
+#zrq-notes-indent
+#zrq-notes-crypto
+#zrq-notes-ansible
+#zrq-notes-osformat
+#
+# AIMetrics: []
+#
+
+    Target:
+
+        Launch the DeepSeek harness in a container.
+        With separate volume mounts for DSH_HOME and LITHOSIA_CODE.
+
+    Result:
+
+        Success - the DSH agent harness works with the separate volume mounts.
+        Tested and documented by the AI agent itself in notes/20261009-01-dsh-home.txt.
+
+
+# -----------------------------------------------------
+# Create a podman secret for our GITHUB_TOKEN.
+#[user@desktop]
+
+    ~/bin/getsecret 'github.dsh-token' \
+    | podman secret create \
+        --replace \
+        'dsh-github-token' \
+        -
+
+--START--
+def3df404b9143f8df18c457e
+--END--
+
+
+# -----------------------------------------------------
+# Launch the container with our projects mounted as volumes.
+#[user@desktop]
+
+    source "${HOME:?}/lithosia.env"
+    source "${HOME:?}/calycopis.env"
+    source "${CALYCOPIS_CODE}/bin/container-host.sh"
+
+    podman network create \
+        --ignore \
+        "lithosia-dsh-net"
+
+    podman pod create \
+        --replace \
+        --name    "lithosia-dsh-pod" \
+        --network "lithosia-dsh-net" \
+        --publish 3081:3081
+
+    podman run \
+        --rm \
+        --tty \
+        --interactive \
+        --pod    "lithosia-dsh-pod" \
+        --name   "lithosia-dsh-container" \
+        --env    "CONTAINER_HOST=unix:///run/podman/podman.sock" \
+        --volume "${HOST_CONTAINER_PATH}:/run/podman/podman.sock:rw,Z" \
+        --env    "CALYCOPIS_CODE=/Calycopis/Calycopis-broker" \
+        --volume "${CALYCOPIS_CODE:?}:/Calycopis/Calycopis-broker:rw,Z" \
+        --env    "TREBULA_CODE=/Calycopis/Calycopis-openapi" \
+        --volume "${TREBULA_CODE:?}:/Calycopis/Calycopis-openapi:rw,Z" \
+        --env    "LITHOSIA_CODE=/Zarquan/lithosia-quadra" \
+        --volume "${LITHOSIA_CODE:?}:/Zarquan/lithosia-quadra:rw,Z" \
+        --env    "DSH_HOME=/opt/dsh" \
+        --volume "${LITHOSIA_CODE:?}/dsh:/opt/dsh:rw,Z" \
+        --secret 'dsh-github-token' \
+        localhost/zarquan/lithosia-quadra:latest \
+            bash
+
+--START--
+....
+....
+--END--
+
+
+# -----------------------------------------------------
+# Run our initialisation script.
+#[root@lithosia-dsh-pod]
+
+    /usr/local/bin/init-dsh.sh
+
+--START--
+---- ----
+Installing the web proxy module
+Already up to date
+Progress: resolved 1, reused 0, downloaded 1, added 0, done
+Done in 2.3s using pnpm v10.33.0
+---- ----
+Applying the fix to dsh-client-connection
+const inject = ["webServer", "credentials"];
+---- ----
+--END--
+
+
+# -----------------------------------------------------
+# Run the DSH web profile.
+#[root@lithosia-dsh-pod]
+
+    dsh web --no-open
+
+    >   dsh web: http://127.0.0.1:3080/?token=....
+
+
+# -----------------------------------------------------
+# -----------------------------------------------------
+# Login to the harness from the desktop, using the token.
+#[user@desktop]
+
+    firefox \
+        --new-window \
+        'http://127.0.0.1:3081/?token=....'
+
+
+
+
+
+
