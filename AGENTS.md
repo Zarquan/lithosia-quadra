@@ -118,6 +118,16 @@
         "value": 2,
         "units": "%"
         }
+      },
+      {
+      "interval": "2026-10-09T12:36:00/2026-10-09T12:45:00",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.0-rc.2",
+      "model": "deepseek-flash",
+      "contribution": {
+        "value": 25,
+        "units": "%"
+        }
       }
     ]
 -->
@@ -227,6 +237,123 @@ Practical consequences here:
   mounted secret file is equivalent in exposure, but does not need the socket.
 - The behaviour is deliberate, not a defect. The reasoning, evidence and the
   options for working with it are recorded in GitHub issue **#5**.
+
+### Git remotes and the GitHub token
+
+`origin` is an SSH remote, but the agent container has no SSH key and no global
+git config, so every `origin`-based command fails here:
+
+```
+git fetch origin          # Host key verification failed
+git push  origin HEAD     # Host key verification failed
+git remote prune origin   # Host key verification failed
+```
+
+**This is a temporary workaround, not the intended arrangement.** Three
+long-term options are on the table and none is chosen yet: giving the container
+a valid SSH key; changing `origin` to an HTTPS URL; or leaving `origin` alone
+and driving HTTPS through a named remote with a persistent credential helper.
+Until one is picked, authenticate the *individual command* with the mounted
+secret rather than editing the remote, so `.git/config` and the human's own
+clone stay untouched.
+
+The token reaches the shell as a file, because the scrub removes
+credential-shaped environment variables (see above). `git` cannot read a file,
+so write a short askpass helper first. It is read by git and never printed:
+
+```bash
+umask 077
+askpass=$(mktemp /tmp/.git-askpass.XXXXXX)
+trap 'rm -f "$askpass"' EXIT
+
+cat > "$askpass" <<'ASKPASS'
+#!/usr/bin/env bash
+case "${1:-}" in
+    *[Uu]sername*) printf '%s' 'x-access-token' ;;
+    *)             cat /run/secrets/dsh-github-token ;;
+esac
+ASKPASS
+chmod 700 "$askpass"
+
+URL=https://github.com/Zarquan/lithosia-quadra.git
+
+# Fetch main, updating only the remote-tracking ref.
+GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
+    git -c credential.helper= fetch "$URL" \
+        'refs/heads/main:refs/remotes/origin/main'
+
+# Push the current branch.
+GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
+    git -c credential.helper= push "$URL" \
+        HEAD:refs/heads/<branch>
+```
+
+- `-c credential.helper=` stops git offering a stored helper or an interactive
+  prompt; `GIT_TERMINAL_PROMPT=0` makes a missing credential fail fast instead of
+  hanging.
+- The `trap` removes the helper even if git fails. Do not skip it.
+- **Do not pass `--set-upstream` with the HTTPS URL.** It writes that URL into
+  `branch.<name>.remote`, which then needs the token for a plain `git push` and
+  surprises the human's clone later. Set tracking on the host, against the SSH
+  remote.
+- **Never put the token on a command line** — in a URL (`https://<token>@…`) or
+  a `-c http.extraheader=…` value — where `ps` and a transcript can capture it.
+  Read it from the file inside the helper.
+
+If you would rather type a remote name than a URL, add one for the session:
+
+```bash
+git remote add origin-http https://github.com/Zarquan/lithosia-quadra.git
+git fetch origin-http
+git push  origin-http HEAD:refs/heads/<branch>
+git remote remove origin-http     # when done; it is only a convenience
+```
+
+This is purely addressing: it still needs the askpass helper for authentication,
+and it creates a second `refs/remotes/origin-http/*` namespace that can drift
+from `refs/remotes/origin/*`. Prefer fetching an explicit refspec, as above.
+
+Read-only checks need no credential at all on a public repository, which is the
+cheapest way to confirm a push landed:
+
+```bash
+git ls-remote https://github.com/Zarquan/lithosia-quadra.git refs/heads/main
+```
+
+Opening the pull request is simpler than the transport, because `bin/gh` already
+reads the same secret:
+
+```bash
+bin/gh pr create --repo Zarquan/lithosia-quadra \
+    --base main --head <branch> \
+    --title "<title>" --body-file <file>
+```
+
+Per [`ai-metrics.mdc`](agents/rules/ai-metrics.mdc), an agent-authored PR body
+ends with an `AIMetrics` block in a fenced code block.
+
+Caveats worth knowing before blaming the mount:
+
+- The fine-grained token needs **Contents: Read and write** on this repository
+  for a push, and **Pull requests: Read and write** to open a PR. With only read
+  permissions every read succeeds and the write is refused with
+  `remote: Permission to … denied` (HTTP 403), which looks like a credential
+  failure but is not.
+- Editing an existing token's permissions needs no remount — the value is
+  unchanged, so the container's copy stays valid. **Regenerating** the token does
+  change the value: update the podman secret and recreate the container. Never
+  test that by launching containers from inside this container; see
+  `notes/20261009-01-dsh-home.txt`.
+- `gh auth git-credential` looks like a ready-made helper — and it does
+  authenticate git, verified — but it reads the token from `gh`'s own state,
+  which is empty here: `gh auth status` without `bin/gh` reports "not logged into
+  any GitHub hosts". It works only where something supplies `GH_TOKEN`, such as
+  `GH_TOKEN="$(cat /run/secrets/dsh-github-token)" git -c
+  credential.helper='!gh auth git-credential' …`. That plumbing is no shorter
+  than the askpass helper above, which is why a persistent credential helper is a
+  long-term decision rather than part of this workaround.
+- Commit signing is unaffected: `bin/agent-commit` is local and needs no
+  transport. Only the push needs the token.
 
 ### Writing outside the workspace
 
