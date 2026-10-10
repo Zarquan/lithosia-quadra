@@ -3,17 +3,18 @@ description: Update AIMetrics block in file headers for all modified or created 
 alwaysApply: true
 ---
 
+<!-- core:start -->
 Every file you create or modify must have an AIMetrics block in its file header comment.
+
+**Exempt files** carry no AIMetrics block, because they carry no header at all
+(see the `licence-header` rule for the full list): dotfiles such as `.gitignore`;
+lockfiles and machine-generated files; and the `agents/rules/*.mdc` files
+themselves.
 
 - If a file already has an AIMetrics block, update it by adding a new entry to the array (do not remove existing entries).
 - If a file has no AIMetrics block, add one.
 - For new files created entirely by the agent, set contribution value to 100.
 - For modified files, estimate the percentage of lines changed and use that as the contribution value.
-
-**Exempt files** carry no AIMetrics block, because they carry no header at all
-(see the `licence-header` rule for the full list): dotfiles such as
-`.gitignore`; lockfiles and machine-generated files; and the imported
-`agents/rules/*.mdc` themselves.
 
 Each entry records one agent/model contribution to the file. Log one entry per
 **change**, not one per edit: a change made through several edits in sequence is
@@ -37,9 +38,7 @@ a single contribution.
   (100 for a new file).
 
 The `name`, `version`, and `model` fields must always describe the agent and model that
-actually performed the modification. In this project that is normally `@deepseek-ai/dsh`,
-the version reported by `dsh --version`, and the `model` from the `agent-default-model`
-entry of the active profile (see `$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
+actually performed the modification.
 
 In every format below, substitute `interval` for `timestamp` when the change
 spanned several edits in sequence.
@@ -61,23 +60,6 @@ The format for JavaScript and Node files (`.mjs`, `.js`, `.cjs`), in `//` commen
 //   ]
 ```
 
-The format for Python, YAML, shell, and other `#`-commented files is:
-
-```
-# AIMetrics: [
-#     {
-#     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
-#     "name": "<agent/tool name from the current session>",
-#     "version": "<agent/tool version from the current session>",
-#     "model": "<model identifier from the current session>",
-#     "contribution": {
-#       "value": <percentage>,
-#       "units": "%"
-#       }
-#     }
-#   ]
-```
-
 The format for Java files (inside the `/* */` header comment) is:
 
 ```
@@ -95,7 +77,24 @@ The format for Java files (inside the `/* */` header comment) is:
  *   ]
 ```
 
-The format for Markdown files and XML files (inside `<!-- -->` comments) is:
+The format for Python, YAML, shell, and other `#`-commented files is:
+
+```
+# AIMetrics: [
+#     {
+#     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+#     "name": "<agent/tool name from the current session>",
+#     "version": "<agent/tool version from the current session>",
+#     "model": "<model identifier from the current session>",
+#     "contribution": {
+#       "value": <percentage>,
+#       "units": "%"
+#       }
+#     }
+#   ]
+```
+
+The format for Markdown files (inside `<!-- -->` comments) is:
 
 ```
   AIMetrics: [
@@ -112,6 +111,23 @@ The format for Markdown files and XML files (inside `<!-- -->` comments) is:
     ]
 ```
 
+The format for XML files, inside the `<!--+ ... +-->` block, is:
+
+```
+    | AIMetrics: [
+    |     {
+    |     "timestamp": "<ISO 8601 timestamp of the modification, e.g. 2026-02-14T15:30:00>",
+    |     "name": "<agent/tool name from the current session>",
+    |     "version": "<agent/tool version from the current session>",
+    |     "model": "<model identifier from the current session>",
+    |     "contribution": {
+    |       "value": <percentage>,
+    |       "units": "%"
+    |       }
+    |     }
+    |   ]
+```
+
 Place the block after the `</meta:header>` tag and before the closing comment delimiter.
 
 For files with no AIMetrics or AI contribution, the block should be:
@@ -121,15 +137,6 @@ For files with no AIMetrics or AI contribution, the block should be:
 ```
 
 (using the appropriate comment prefix for the file type).
-
-> **Imported from the Calycopis-broker project**
-> (`/Calycopis/Calycopis-broker/agents/rules/ai-metrics.mdc`) and adapted for this
-> project: the JavaScript and Markdown formats have been added, because this
-> project is mostly `.mjs` and `.md`, and the exemption above now also covers
-> dotfiles and machine-generated files rather than only `agents/rules/*.mdc`.
-> Contributions here are logged one entry per **change** rather than one per
-> edit, using an `interval` when a change took several edits in sequence, and
-> issue bodies follow the same rule.
 
 ### Git commit messages
 
@@ -160,26 +167,32 @@ AIMetrics: [
   ]
 ```
 
-### GitHub issues
+### GitHub issues, pull requests and comments
 
-Every GitHub issue created by an agent must end with an AIMetrics block, for
-the same reason a commit message does: the issue is an authored artifact, and
-the block records which agent and model produced it.
+Any content an agent creates or posts on GitHub must end with an AIMetrics
+block, for the same reason a commit message does: it is an authored artifact,
+and the block records which agent and model produced it. That covers issues,
+pull requests, issue and pull request comments, reviews, releases, and any
+other GitHub content that carries a Markdown body.
 
 - The `name`, `version`, and `model` fields are the same as the values used for
   a file header and a commit message: they must always describe the agent and
   model that actually performed the work.
-- Use `timestamp` for a change made in one pass, or `interval` when the issue was
-  written or revised through several edits in sequence — one entry covering them,
-  exactly as for a file header. (A commit message always uses `interval`, because
-  a commit summarises a session's work.) Append a new entry for a later change
-  rather than replacing existing ones.
-- The `contribution.value` is `100` for an issue the agent created in full, and
-  an estimate of the lines changed for one it later edited.
-- Surround the block with a fenced code block, because an issue body is Markdown
+- Use `timestamp` for a change made in one pass, or `interval` when the content
+  was written or revised through several edits in sequence — one entry covering
+  them, exactly as for a file header. (A commit message always uses `interval`,
+  because a commit summarises a session's work.) Append a new entry for a later
+  change rather than replacing existing ones.
+- The `contribution.value` is `100` for content the agent wrote in full, and an
+  estimate of the lines changed for content it later edited.
+- Surround the block with a fenced code block, because a GitHub body is Markdown
   and has no comment syntax to put it in. It must be the last thing in the body.
+- A pull request body is a separate artifact from the commit messages carried by
+  the pull request. Each commit message carries its own block, and the pull
+  request body carries another.
 
-The format for an AIMetrics block at the end of a GitHub issue body is:
+The format for an AIMetrics block at the end of a GitHub issue, pull request,
+comment, review or release body is:
 
 ````text
 ```text
@@ -197,3 +210,40 @@ AIMetrics: [
   ]
 ```
 ````
+
+### Cross-project issue and pull request references
+
+A reference to an issue or pull request is only unqualified (`#123`) in the
+project that owns it. Anywhere else — in an issue, a comment, a release or a
+pull request in a different project — write it as `owner/repo#123`.
+
+An unqualified number in the wrong project does not simply fail to link. If that
+project has an issue with the same number, the reference silently points at the
+wrong one.
+
+The closing keywords follow the same rule, because GitHub resolves them exactly
+as it resolves a plain reference:
+
+- `Closes owner/repo#123`
+- `Fixes owner/repo#123`
+- `Resolves owner/repo#123`
+
+Two related facts:
+
+- `Refs` is **not** a closing keyword. A body or commit full of `Refs #123`
+  closes nothing.
+- A closing keyword can sit in a pull request body or in a commit message, but a
+  commit message only takes effect once it reaches the default branch. On a
+  feature branch, the pull request body is the reliable place.
+
+<!-- core:end -->
+
+<!-- local:start -->
+The identity values for this project are recorded in
+[`AGENTS.md`](../../AGENTS.md#coding-rules), under **Coding rules**. The `name`
+is normally `@deepseek-ai/dsh`, the `version` is what `dsh --version` reports,
+and the `model` is the `agent-default-model` entry of the active profile
+(`$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
+
+Read them from there rather than copying the illustrative values in this rule.
+<!-- local:end -->
